@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pgsemantic"
+version = "0.1.0"
+description = "Zero-config semantic search bootstrap for any PostgreSQL database"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+  { name = "Sai Ram Varma Budharaju" }
+]
+keywords = ["pgvector", "postgresql", "semantic-search", "rag", "embeddings", "mcp"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+  "typer>=0.9.0",
+  "rich>=13.0.0",
+  "psycopg[binary]>=3.1.0",
+  "pgvector>=0.3.0",
+  "sentence-transformers>=3.0.0",
+  "openai>=1.0.0",
+  "mcp>=1.0.0",
+  "httpx>=0.27.0",
+  "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-asyncio>=0.23.0",
+  "pytest-benchmark>=4.0.0",
+  "ruff",
+  "mypy>=1.8.0",
+  "types-psycopg2",
+]
+
+[project.scripts]
+pgsemantic = "pgsemantic.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/pgsemantic"
+Issues = "https://github.com/yourusername/pgsemantic/issues"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+select = ["E", "F", "I", "UP", "N", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+  "integration: requires a running Postgres instance (docker-compose up)",
+  "benchmark: performance benchmarks, not run in CI",
+]
+testpaths = ["tests"]
