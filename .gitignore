@@ -14,6 +14,7 @@ env/
 *.swo
 .env
 .pgvector-setup.json
+.pgsemantic.json
 benchmarks/results/
 .DS_Store
 Thumbs.db

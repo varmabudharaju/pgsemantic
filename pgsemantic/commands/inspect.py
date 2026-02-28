@@ -32,7 +32,7 @@ def inspect_command(
 ) -> None:
     """Scan a database and score columns for semantic search suitability."""
     try:
-        with get_connection(database_url) as conn:
+        with get_connection(database_url, register_vector_type=False) as conn:
             pgv_version = get_pgvector_version(conn)
             candidates = inspect_database(conn)
 

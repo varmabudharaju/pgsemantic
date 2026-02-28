@@ -45,13 +45,19 @@ def parse_pgvector_version(version_str: str) -> tuple[int, int, int]:
 @contextmanager
 def get_connection(
     database_url: str,
+    register_vector_type: bool = True,
 ) -> Generator[DictConnection, None, None]:
-    """Open a sync psycopg3 connection with pgvector type registration."""
+    """Open a sync psycopg3 connection with optional pgvector type registration.
+
+    Set register_vector_type=False for operations that don't need pgvector
+    (e.g. schema inspection before the extension is installed).
+    """
     conn: DictConnection = psycopg.connect(
         database_url, row_factory=dict_row
     )
     try:
-        register_vector(conn)
+        if register_vector_type:
+            register_vector(conn)
         yield conn
     finally:
         conn.close()

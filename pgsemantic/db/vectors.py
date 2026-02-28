@@ -61,7 +61,7 @@ SQL_COUNT_TOTAL_WITH_CONTENT = """
 # Returns rows ordered by similarity (descending), with similarity = 1 - distance.
 SQL_SEARCH_SIMILAR = """
     SELECT
-        "id",
+        *,
         {column} AS content,
         1 - ("embedding" <=> %(query_vector)s::vector) AS similarity
     FROM {table}
@@ -75,7 +75,7 @@ SQL_SEARCH_SIMILAR = """
 # to avoid recall degradation with selective filters.
 SQL_HYBRID_SEARCH_BASE = """
     SELECT
-        "id",
+        *,
         {column} AS content,
         1 - ("embedding" <=> %(query_vector)s::vector) AS similarity
     FROM {table}

@@ -150,7 +150,7 @@ def apply_command(
     console.print()
 
     try:
-        with get_connection(database_url) as conn:
+        with get_connection(database_url, register_vector_type=False) as conn:
             # Step 1: Check/install pgvector extension
             console.print("  [dim][1/9][/dim] Checking pgvector extension...", end=" ")
             pgv_version = ensure_pgvector_extension(conn)

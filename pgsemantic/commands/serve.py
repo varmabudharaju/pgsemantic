@@ -2,8 +2,13 @@
 
 Starts the FastMCP server in stdio (for Claude Desktop/Cursor) or
 SSE/HTTP mode (for remote agents).
+
+IMPORTANT: In stdio mode, NOTHING can be written to stdout except
+MCP JSON-RPC messages. All logging/status goes to stderr.
 """
 from __future__ import annotations
+
+import sys
 
 import typer
 from rich.console import Console
@@ -11,7 +16,8 @@ from rich.panel import Panel
 
 from pgsemantic.config import load_settings
 
-console = Console()
+# Use stderr for all output so we never pollute the MCP stdio channel
+console = Console(stderr=True)
 
 
 def serve_command(
@@ -45,9 +51,7 @@ def serve_command(
     from pgsemantic.mcp_server.server import mcp  # noqa: E402
 
     if effective_transport == "stdio":
-        console.print(
-            "[green]Starting MCP server[/green] (transport: stdio)"
-        )
+        print("Starting MCP server (transport: stdio)", file=sys.stderr)
         mcp.run(transport="stdio")
     elif effective_transport in ("http", "sse"):
         console.print(

@@ -104,13 +104,19 @@ def semantic_search(
                 limit=limit,
             )
 
+        # Strip the raw embedding vector — it's huge and useless for the AI
+        clean_results = [
+            {k: v for k, v in row.items() if k != "embedding"}
+            for row in results
+        ]
+
         logger.info(
             "semantic_search: query=%r table=%s results=%d",
             query[:50],
             table,
-            len(results),
+            len(clean_results),
         )
-        return results
+        return clean_results
 
     except PgvectorSetupError as e:
         raise ToolError(str(e)) from e
@@ -159,14 +165,19 @@ def hybrid_search(
                 pgvector_version=pgvector_version,
             )
 
+        clean_results = [
+            {k: v for k, v in row.items() if k != "embedding"}
+            for row in results
+        ]
+
         logger.info(
             "hybrid_search: query=%r table=%s filters=%s results=%d",
             query[:50],
             table,
             effective_filters,
-            len(results),
+            len(clean_results),
         )
-        return results
+        return clean_results
 
     except PgvectorSetupError as e:
         raise ToolError(str(e)) from e

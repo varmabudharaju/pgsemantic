@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import platform
+import shutil
+import sys
 
 import typer
 from rich.console import Console
@@ -44,17 +46,35 @@ def integrate_command(
         ))
         raise typer.Exit(code=1)
 
-    config = {
-        "mcpServers": {
-            "pgsemantic": {
-                "command": "pgsemantic",
-                "args": ["serve"],
-                "env": {
-                    "DATABASE_URL": "<your-database-url>",
+    # Use full python path to avoid PATH issues in Claude Desktop
+    python_path = sys.executable
+    pgsemantic_bin = shutil.which("pgsemantic")
+
+    if pgsemantic_bin:
+        config = {
+            "mcpServers": {
+                "pgsemantic": {
+                    "command": pgsemantic_bin,
+                    "args": ["serve"],
+                    "env": {
+                        "DATABASE_URL": "<your-database-url>",
+                    },
                 },
             },
-        },
-    }
+        }
+    else:
+        # Fallback: use python3 -m pgsemantic serve
+        config = {
+            "mcpServers": {
+                "pgsemantic": {
+                    "command": python_path,
+                    "args": ["-m", "pgsemantic", "serve"],
+                    "env": {
+                        "DATABASE_URL": "<your-database-url>",
+                    },
+                },
+            },
+        }
 
     config_json = json.dumps(config, indent=2)
     config_path = _get_config_path()
