@@ -26,7 +26,7 @@ from pgsemantic.config import (
     save_project_config,
 )
 from pgsemantic.db.client import ensure_pgvector_extension, get_connection
-from pgsemantic.db.introspect import column_exists
+from pgsemantic.db.introspect import column_exists, get_primary_key_columns
 from pgsemantic.db.queue import create_queue_table
 from pgsemantic.exceptions import ExtensionNotFoundError
 
@@ -50,23 +50,39 @@ SQL_CREATE_HNSW_INDEX = """
     WITH (m = {m}, ef_construction = {ef_construction});
 """
 
-# Trigger function that enqueues row changes into pgvector_setup_queue.
-# Handles INSERT, UPDATE, and DELETE operations. Uses UPSERT to avoid
-# duplicate queue entries for the same row/column combination.
-SQL_CREATE_TRIGGER_FUNCTION = """
-    CREATE OR REPLACE FUNCTION pgvector_setup_notify_fn()
+def _build_trigger_function_sql(table: str, pk_columns: list[str]) -> str:
+    """Build a per-table trigger function with the correct PK columns.
+
+    Each table gets its own function (pgvector_setup_{table}_fn) so that
+    tables with different primary keys don't conflict.
+
+    For single-column PKs: row_id = NEW.pk_col::TEXT
+    For composite PKs: row_id = NEW.col1::TEXT || ',' || NEW.col2::TEXT
+    """
+    if len(pk_columns) == 1:
+        new_pk_expr = f"NEW.{pk_columns[0]}::TEXT"
+        old_pk_expr = f"OLD.{pk_columns[0]}::TEXT"
+    else:
+        new_pk_expr = " || ',' || ".join(f"NEW.{col}::TEXT" for col in pk_columns)
+        old_pk_expr = " || ',' || ".join(f"OLD.{col}::TEXT" for col in pk_columns)
+
+    fn_name = f"pgvector_setup_{table}_fn"
+
+    return f"""
+    CREATE OR REPLACE FUNCTION {fn_name}()
     RETURNS TRIGGER AS $$
     DECLARE
         v_row_id TEXT;
     BEGIN
-        v_row_id := NEW.id::TEXT;
         IF TG_OP = 'DELETE' THEN
+            v_row_id := {old_pk_expr};
             INSERT INTO pgvector_setup_queue (table_name, row_id, column_name, operation)
-            VALUES (TG_TABLE_NAME, OLD.id::TEXT, TG_ARGV[0], 'DELETE')
+            VALUES (TG_TABLE_NAME, v_row_id, TG_ARGV[0], 'DELETE')
             ON CONFLICT (table_name, row_id, column_name)
             DO UPDATE SET status = 'pending', operation = 'DELETE', retries = 0, error_msg = NULL, updated_at = NOW();
             RETURN OLD;
         ELSE
+            v_row_id := {new_pk_expr};
             INSERT INTO pgvector_setup_queue (table_name, row_id, column_name, operation)
             VALUES (TG_TABLE_NAME, v_row_id, TG_ARGV[0], TG_OP)
             ON CONFLICT (table_name, row_id, column_name)
@@ -75,16 +91,16 @@ SQL_CREATE_TRIGGER_FUNCTION = """
         END IF;
     END;
     $$ LANGUAGE plpgsql;
-"""
+    """
 
-# Install a trigger on a specific table that fires on INSERT, UPDATE, or DELETE
+# Install a per-table trigger that fires on INSERT, UPDATE, or DELETE
 # and enqueues the affected row_id into the queue table.
 SQL_CREATE_TRIGGER = """
     CREATE OR REPLACE TRIGGER pgvector_setup_{table}_trigger
     AFTER INSERT OR UPDATE OF "{column}" OR DELETE
     ON "{schema}"."{table}"
     FOR EACH ROW
-    EXECUTE FUNCTION pgvector_setup_notify_fn('{column}');
+    EXECUTE FUNCTION pgvector_setup_{table}_fn('{column}');
 """
 
 
@@ -110,6 +126,7 @@ def apply_command(
     db: str = typer.Option(
         "",
         "--db",
+        "-d",
         help="Database URL (overrides DATABASE_URL env var).",
     ),
     schema: str = typer.Option(
@@ -157,7 +174,7 @@ def apply_command(
             version_str = ".".join(str(v) for v in pgv_version)
             console.print(f"[green]v{version_str}[/green]")
 
-            # Step 2: Check if source column exists
+            # Step 2: Check if source column exists and detect primary key
             console.print("  [dim][2/9][/dim] Verifying source column...", end=" ")
             if not column_exists(conn, table, column, schema):
                 console.print("[red]not found[/red]")
@@ -169,7 +186,20 @@ def apply_command(
                     border_style="red",
                 ))
                 raise typer.Exit(code=1)
-            console.print("[green]found[/green]")
+
+            pk_columns = get_primary_key_columns(conn, table, schema)
+            if not pk_columns:
+                console.print("[red]no primary key[/red]")
+                console.print(Panel(
+                    f"[red]Table '{schema}.{table}' has no primary key.[/red]\n\n"
+                    "pgsemantic requires a primary key to track row changes.\n"
+                    "Add one with: ALTER TABLE {table} ADD PRIMARY KEY (column);",
+                    title="Primary Key Required",
+                    border_style="red",
+                ))
+                raise typer.Exit(code=1)
+            pk_display = ", ".join(pk_columns)
+            console.print(f"[green]found[/green] (PK: {pk_display})")
 
             # Step 3: Check if embedding column already exists
             console.print("  [dim][3/9][/dim] Checking embedding column...", end=" ")
@@ -239,11 +269,12 @@ def apply_command(
             create_queue_table(conn)
             console.print("[green]done[/green]")
 
-            # Step 7: Install trigger function
+            # Step 7: Install trigger function (PK-aware)
             console.print(
                 "  [dim][7/9][/dim] Installing trigger function...", end=" "
             )
-            conn.execute(SQL_CREATE_TRIGGER_FUNCTION)
+            trigger_fn_sql = _build_trigger_function_sql(table, pk_columns)
+            conn.execute(trigger_fn_sql)
             conn.commit()
             console.print("[green]done[/green]")
 
@@ -267,6 +298,7 @@ def apply_command(
             model=model,
             model_name=model_name,
             dimensions=dimensions,
+            primary_key=pk_columns,
         )
         console.print("[green]done[/green]")
 
@@ -314,6 +346,7 @@ def _save_config(
     model: str,
     model_name: str,
     dimensions: int,
+    primary_key: list[str] | None = None,
 ) -> None:
     """Save or update the .pgsemantic.json project config."""
     from pgsemantic import __version__
@@ -336,6 +369,7 @@ def _save_config(
         hnsw_m=HNSW_M,
         hnsw_ef_construction=HNSW_EF_CONSTRUCTION,
         applied_at=datetime.now(tz=timezone.utc).isoformat(),
+        primary_key=primary_key or ["id"],
     )
     config.tables.append(table_config)
     save_project_config(config)

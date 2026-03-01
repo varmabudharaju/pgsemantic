@@ -21,9 +21,9 @@ console = Console()
 def status_command(
     database_url: str = typer.Option(
         None,
-        "--database-url",
+        "--db",
         "-d",
-        help="PostgreSQL connection string. Defaults to DATABASE_URL env var.",
+        help="Database URL (overrides DATABASE_URL env var).",
     ),
 ) -> None:
     """Show embedding health dashboard for all watched tables."""
@@ -33,7 +33,7 @@ def status_command(
     if not db_url:
         console.print(Panel(
             "[red]DATABASE_URL not set.[/red]\n\n"
-            "Provide it via [cyan]--database-url[/cyan] or set [cyan]DATABASE_URL[/cyan] "
+            "Provide it via [cyan]--db[/cyan] or set [cyan]DATABASE_URL[/cyan] "
             "in your .env file.",
             title="Configuration Required",
             border_style="red",
@@ -62,12 +62,25 @@ def status_command(
     try:
         with get_connection(db_url) as conn:
             for tc in config.tables:
-                embedded = count_embedded(conn, tc.table, schema=tc.schema)
-                total = count_total_with_content(
-                    conn, tc.table, tc.column, schema=tc.schema
-                )
-                pending = count_pending(conn, tc.table)
-                failed = count_failed(conn, tc.table)
+                try:
+                    embedded = count_embedded(conn, tc.table, schema=tc.schema)
+                    total = count_total_with_content(
+                        conn, tc.table, tc.column, schema=tc.schema
+                    )
+                    pending = count_pending(conn, tc.table)
+                    failed = count_failed(conn, tc.table)
+                except Exception:
+                    # Table may have been dropped — show as missing
+                    table.add_row(
+                        tc.table,
+                        tc.column,
+                        tc.model_name,
+                        "[red]TABLE MISSING[/red]",
+                        "—",
+                        "—",
+                        tc.applied_at,
+                    )
+                    continue
 
                 pct = (embedded / total) * 100 if total > 0 else 0.0
 

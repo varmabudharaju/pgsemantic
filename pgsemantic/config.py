@@ -96,6 +96,7 @@ class TableConfig:
     hnsw_m: int
     hnsw_ef_construction: int
     applied_at: str
+    primary_key: list[str] = field(default_factory=lambda: ["id"])
 
 
 @dataclass
