@@ -24,23 +24,32 @@ DictConnection = psycopg.Connection[dict[str, object]]
 # -- SQL Constants ----------------------------------------------------------
 
 # Fetch rows that have source text but no embedding yet, using keyset
-# pagination (WHERE id > last_id) for consistent performance regardless
-# of how many rows have already been processed.
-SQL_FETCH_UNEMBEDDED = """
-    SELECT "id", {column}
+# pagination for consistent performance. PK columns are substituted at runtime.
+# Two variants: one for the first page (no PK filter), one for subsequent pages.
+SQL_FETCH_UNEMBEDDED_FIRST = """
+    SELECT {pk_select}, {column}
     FROM {table}
     WHERE {column} IS NOT NULL
       AND "embedding" IS NULL
-      AND "id" > %(last_id)s
-    ORDER BY "id" ASC
+    ORDER BY {pk_order}
     LIMIT %(batch_size)s;
 """
 
-# Update a single row's embedding vector.
-SQL_UPDATE_EMBEDDING = """
+SQL_FETCH_UNEMBEDDED_NEXT = """
+    SELECT {pk_select}, {column}
+    FROM {table}
+    WHERE {column} IS NOT NULL
+      AND "embedding" IS NULL
+      AND ({pk_where_gt})
+    ORDER BY {pk_order}
+    LIMIT %(batch_size)s;
+"""
+
+# Update a single row's embedding vector. PK WHERE clause is substituted at runtime.
+SQL_UPDATE_EMBEDDING_TEMPLATE = """
     UPDATE {table}
     SET "embedding" = %(embedding)s
-    WHERE "id" = %(row_id)s;
+    WHERE {pk_where_eq};
 """
 
 # Count rows that have a non-NULL embedding.
@@ -88,18 +97,18 @@ SQL_SET_ITERATIVE_SCAN = """
 """
 
 # Fetch the source text for a single row (used by the worker to get text
-# before embedding).
-SQL_FETCH_ROW_TEXT = """
+# before embedding). PK WHERE clause is substituted at runtime.
+SQL_FETCH_ROW_TEXT_TEMPLATE = """
     SELECT {column}
     FROM {table}
-    WHERE "id" = %(row_id)s;
+    WHERE {pk_where_eq};
 """
 
 # Set a row's embedding to NULL (used for DELETE events to clear stale data).
-SQL_NULL_EMBEDDING = """
+SQL_NULL_EMBEDDING_TEMPLATE = """
     UPDATE {table}
     SET "embedding" = NULL
-    WHERE "id" = %(row_id)s;
+    WHERE {pk_where_eq};
 """
 
 
@@ -116,6 +125,71 @@ def _quoted(name: str) -> str:
     return f'"{name}"'
 
 
+def _pk_select(pk_columns: list[str]) -> str:
+    """Build SELECT list for PK columns, e.g. '"id"' or '"org_id", "user_id"'."""
+    return ", ".join(_quoted(c) for c in pk_columns)
+
+
+def _pk_order(pk_columns: list[str]) -> str:
+    """Build ORDER BY clause for PK columns."""
+    return ", ".join(f"{_quoted(c)} ASC" for c in pk_columns)
+
+
+def _pk_where_eq(pk_columns: list[str]) -> str:
+    """Build WHERE clause for PK equality, e.g. '"id" = %(pk_id)s'."""
+    if len(pk_columns) == 1:
+        return f'{_quoted(pk_columns[0])} = %(pk_val)s'
+    return " AND ".join(
+        f'{_quoted(c)} = %(pk_{c})s' for c in pk_columns
+    )
+
+
+def _pk_where_gt(pk_columns: list[str]) -> str:
+    """Build WHERE clause for keyset pagination (row > last_row)."""
+    if len(pk_columns) == 1:
+        return f'{_quoted(pk_columns[0])} > %(last_pk)s'
+    cols = ", ".join(_quoted(c) for c in pk_columns)
+    params = ", ".join(f"%(last_pk_{c})s" for c in pk_columns)
+    return f"ROW({cols}) > ROW({params})"
+
+
+def _pk_params_from_row_id(pk_columns: list[str], row_id: str) -> dict[str, str]:
+    """Parse a stringified row_id back into PK parameter dict.
+
+    Single PK: "42" -> {"pk_val": "42"}
+    Composite PK: "org1,user2" -> {"pk_org_id": "org1", "pk_user_id": "user2"}
+    """
+    if len(pk_columns) == 1:
+        return {"pk_val": row_id}
+    values = row_id.split(",")
+    return {f"pk_{c}": v for c, v in zip(pk_columns, values, strict=True)}
+
+
+def _pk_row_id(pk_columns: list[str], row: dict[str, object]) -> str:
+    """Extract the stringified row_id from a row dict."""
+    if len(pk_columns) == 1:
+        return str(row[pk_columns[0]])
+    return ",".join(str(row[c]) for c in pk_columns)
+
+
+def _pk_last_params(pk_columns: list[str], row: dict[str, object]) -> dict[str, object]:
+    """Build keyset pagination params from the last row in a batch."""
+    if len(pk_columns) == 1:
+        return {"last_pk": row[pk_columns[0]]}
+    return {f"last_pk_{c}": row[c] for c in pk_columns}
+
+
+def _pk_initial_params(pk_columns: list[str]) -> dict[str, object]:
+    """Build initial keyset pagination params (start from beginning).
+
+    Uses None to signal "no previous row" — the SQL WHERE clause
+    handles this with IS NULL check.
+    """
+    if len(pk_columns) == 1:
+        return {"last_pk": None}
+    return {f"last_pk_{c}": None for c in pk_columns}
+
+
 # -- Functions --------------------------------------------------------------
 
 
@@ -124,35 +198,65 @@ def fetch_unembedded_batch(
     table: str,
     column: str,
     batch_size: int,
-    last_id: int = 0,
+    pk_columns: list[str] | None = None,
+    last_pk_params: dict[str, object] | None = None,
     schema: str = "public",
 ) -> list[dict[str, object]]:
     """Fetch rows with source text but no embedding, using keyset pagination.
 
-    Returns a list of dicts with 'id' and the source column value.
-    Keyset pagination (WHERE id > last_id ORDER BY id LIMIT N) ensures
-    consistent performance regardless of offset depth.
+    Returns a list of dicts with PK columns and the source column value.
+    Keyset pagination ensures consistent performance regardless of offset depth.
+
+    Pass last_pk_params=None for the first page (no PK filter).
     """
+    if pk_columns is None:
+        pk_columns = ["id"]
+
     qualified = _qualified_table(table, schema)
     quoted_col = _quoted(column)
-    sql = SQL_FETCH_UNEMBEDDED.format(table=qualified, column=quoted_col)
-    result = conn.execute(
-        sql, {"last_id": last_id, "batch_size": batch_size}
-    ).fetchall()
+
+    if last_pk_params is None:
+        # First page — no PK filter
+        sql = SQL_FETCH_UNEMBEDDED_FIRST.format(
+            table=qualified,
+            column=quoted_col,
+            pk_select=_pk_select(pk_columns),
+            pk_order=_pk_order(pk_columns),
+        )
+        params: dict[str, object] = {"batch_size": batch_size}
+    else:
+        # Subsequent pages — use keyset pagination
+        sql = SQL_FETCH_UNEMBEDDED_NEXT.format(
+            table=qualified,
+            column=quoted_col,
+            pk_select=_pk_select(pk_columns),
+            pk_where_gt=_pk_where_gt(pk_columns),
+            pk_order=_pk_order(pk_columns),
+        )
+        params = {"batch_size": batch_size, **last_pk_params}
+
+    result = conn.execute(sql, params).fetchall()
     return [dict(row) for row in result]
 
 
 def update_embedding(
     conn: DictConnection,
     table: str,
-    row_id: int,
+    row_id: str,
     embedding: list[float],
+    pk_columns: list[str] | None = None,
     schema: str = "public",
 ) -> None:
     """Update a single row's embedding vector."""
+    if pk_columns is None:
+        pk_columns = ["id"]
     qualified = _qualified_table(table, schema)
-    sql = SQL_UPDATE_EMBEDDING.format(table=qualified)
-    conn.execute(sql, {"row_id": row_id, "embedding": embedding})
+    sql = SQL_UPDATE_EMBEDDING_TEMPLATE.format(
+        table=qualified,
+        pk_where_eq=_pk_where_eq(pk_columns),
+    )
+    params = {"embedding": embedding, **_pk_params_from_row_id(pk_columns, row_id)}
+    conn.execute(sql, params)
 
 
 def bulk_update_embeddings(
@@ -160,13 +264,16 @@ def bulk_update_embeddings(
     table: str,
     rows: list[dict[str, object]],
     embeddings: list[list[float]],
+    pk_columns: list[str] | None = None,
     schema: str = "public",
 ) -> None:
     """Update embeddings for multiple rows in a single transaction.
 
-    Each row dict must have an 'id' key. The embeddings list must be the
+    Each row dict must have the PK column(s). The embeddings list must be the
     same length as the rows list. Commits after all updates.
     """
+    if pk_columns is None:
+        pk_columns = ["id"]
     if len(rows) != len(embeddings):
         raise ValueError(
             f"rows ({len(rows)}) and embeddings ({len(embeddings)}) "
@@ -174,11 +281,15 @@ def bulk_update_embeddings(
         )
 
     qualified = _qualified_table(table, schema)
-    sql = SQL_UPDATE_EMBEDDING.format(table=qualified)
+    sql = SQL_UPDATE_EMBEDDING_TEMPLATE.format(
+        table=qualified,
+        pk_where_eq=_pk_where_eq(pk_columns),
+    )
 
     for row, embedding in zip(rows, embeddings, strict=True):
-        row_id = row["id"]
-        conn.execute(sql, {"row_id": row_id, "embedding": embedding})
+        row_id = _pk_row_id(pk_columns, row)
+        params = {"embedding": embedding, **_pk_params_from_row_id(pk_columns, row_id)}
+        conn.execute(sql, params)
 
     conn.commit()
     logger.debug("Bulk updated %d embeddings in %s", len(rows), table)
@@ -257,13 +368,15 @@ def hybrid_search(
     Raises InvalidFilterError if a filter key doesn't match a table column.
     """
     # Validate filter keys against actual table columns.
-    # Strip _min/_max suffixes before checking, since those are comparison operators
-    # applied to the base column name (e.g., price_max → price).
+    # Keys ending in _min/_max are range operators (e.g., price_max → price <= value),
+    # UNLESS the key itself is a real column name (e.g., cook_time_min is a column).
+    valid_columns: set[str] = set()
     if filters:
         valid_columns = get_column_names(conn, table, schema)
         for key in filters:
             actual_col = key
-            if key.endswith("_min") or key.endswith("_max"):
+            # Only strip suffix if the raw key isn't itself a column
+            if key not in valid_columns and (key.endswith("_min") or key.endswith("_max")):
                 actual_col = key[:-4]
             if actual_col not in valid_columns:
                 raise InvalidFilterError(
@@ -285,20 +398,23 @@ def hybrid_search(
         "limit": limit,
     }
 
-    # Append parameterized filter conditions
+    # Append parameterized filter conditions.
+    # _min/_max suffixes become >= / <= operators, but only when the key
+    # is NOT itself a real column name (avoids collision with columns
+    # like "cook_time_min" which should be treated as exact match).
     for key, value in filters.items():
-        quoted_key = _quoted(key)
-        # Handle special suffixes for comparison operators
-        if key.endswith("_min"):
+        is_range_op = (
+            (key.endswith("_min") or key.endswith("_max"))
+            and key not in valid_columns
+        )
+        if is_range_op and key.endswith("_min"):
             actual_col = key[:-4]
-            quoted_key = _quoted(actual_col)
-            sql += f"  AND {quoted_key} >= %({key})s\n"
-        elif key.endswith("_max"):
+            sql += f"  AND {_quoted(actual_col)} >= %({key})s\n"
+        elif is_range_op and key.endswith("_max"):
             actual_col = key[:-4]
-            quoted_key = _quoted(actual_col)
-            sql += f"  AND {quoted_key} <= %({key})s\n"
+            sql += f"  AND {_quoted(actual_col)} <= %({key})s\n"
         else:
-            sql += f"  AND {quoted_key} = %({key})s\n"
+            sql += f"  AND {_quoted(key)} = %({key})s\n"
         params[key] = value
 
     sql += '    ORDER BY "embedding" <=> %(query_vector)s::vector\n'
@@ -313,6 +429,7 @@ def fetch_row_text(
     table: str,
     column: str,
     row_id: str,
+    pk_columns: list[str] | None = None,
     schema: str = "public",
 ) -> str | None:
     """Fetch the source text for a single row (used by the worker).
@@ -320,10 +437,17 @@ def fetch_row_text(
     Returns the text value or None if the row doesn't exist or the
     column is NULL.
     """
+    if pk_columns is None:
+        pk_columns = ["id"]
     qualified = _qualified_table(table, schema)
     quoted_col = _quoted(column)
-    sql = SQL_FETCH_ROW_TEXT.format(table=qualified, column=quoted_col)
-    result = conn.execute(sql, {"row_id": row_id}).fetchone()
+    sql = SQL_FETCH_ROW_TEXT_TEMPLATE.format(
+        table=qualified,
+        column=quoted_col,
+        pk_where_eq=_pk_where_eq(pk_columns),
+    )
+    params = _pk_params_from_row_id(pk_columns, row_id)
+    result = conn.execute(sql, params).fetchone()
     if result is None:
         return None
     value = result[column]
@@ -336,11 +460,18 @@ def null_embedding(
     conn: DictConnection,
     table: str,
     row_id: str,
+    pk_columns: list[str] | None = None,
     schema: str = "public",
 ) -> None:
     """Set a row's embedding to NULL (used for DELETE events)."""
+    if pk_columns is None:
+        pk_columns = ["id"]
     qualified = _qualified_table(table, schema)
-    sql = SQL_NULL_EMBEDDING.format(table=qualified)
-    conn.execute(sql, {"row_id": row_id})
+    sql = SQL_NULL_EMBEDDING_TEMPLATE.format(
+        table=qualified,
+        pk_where_eq=_pk_where_eq(pk_columns),
+    )
+    params = _pk_params_from_row_id(pk_columns, row_id)
+    conn.execute(sql, params)
     conn.commit()
     logger.debug("Nulled embedding for row %s in %s", row_id, table)

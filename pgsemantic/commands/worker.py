@@ -14,7 +14,7 @@ console = Console()
 
 def worker_command(
     db: str | None = typer.Option(
-        None, "--db", help="Database URL (overrides DATABASE_URL)"
+        None, "--db", "-d", help="Database URL (overrides DATABASE_URL env var).",
     ),
 ) -> None:
     """Start the background worker daemon that processes the embedding queue."""

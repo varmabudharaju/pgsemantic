@@ -155,9 +155,14 @@ def _process_job(
         )
         return
 
+    pk_columns = table_config.primary_key
+
     try:
         if operation == "DELETE":
-            null_embedding(conn, table_name, row_id, schema=table_config.schema)
+            null_embedding(
+                conn, table_name, row_id,
+                pk_columns=pk_columns, schema=table_config.schema,
+            )
             complete_job(conn, job_id=job_id)
             logger.info(
                 "Cleared embedding for %s#%s (DELETE)", table_name, row_id
@@ -169,6 +174,7 @@ def _process_job(
                 table_name,
                 column_name,
                 row_id,
+                pk_columns=pk_columns,
                 schema=table_config.schema,
             )
             if text is None:
@@ -184,8 +190,9 @@ def _process_job(
             update_embedding(
                 conn,
                 table_name,
-                int(row_id),
+                row_id,
                 embedding,
+                pk_columns=pk_columns,
                 schema=table_config.schema,
             )
             conn.commit()

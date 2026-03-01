@@ -26,6 +26,7 @@ from pgsemantic.config import (
 )
 from pgsemantic.db.client import get_connection
 from pgsemantic.db.vectors import (
+    _pk_last_params,
     bulk_update_embeddings,
     count_embedded,
     count_total_with_content,
@@ -52,6 +53,7 @@ def index_command(
     db: str = typer.Option(
         "",
         "--db",
+        "-d",
         help="Database URL (overrides DATABASE_URL env var).",
     ),
 ) -> None:
@@ -86,6 +88,7 @@ def index_command(
     column = table_config.column
     schema = table_config.schema
     model = table_config.model
+    pk_columns = table_config.primary_key
 
     console.print()
     console.print(
@@ -126,7 +129,7 @@ def index_command(
             # Bulk embed loop with progress bar
             start_time = time.monotonic()
             rows_embedded = 0
-            last_id = 0
+            last_pk_params: dict[str, object] | None = None  # First page
 
             with Progress(
                 SpinnerColumn(),
@@ -147,7 +150,8 @@ def index_command(
                         table=table,
                         column=column,
                         batch_size=batch_size,
-                        last_id=last_id,
+                        pk_columns=pk_columns,
+                        last_pk_params=last_pk_params,
                         schema=schema,
                     )
 
@@ -166,11 +170,12 @@ def index_command(
                         table=table,
                         rows=batch,
                         embeddings=embeddings,
+                        pk_columns=pk_columns,
                         schema=schema,
                     )
 
                     rows_embedded += len(batch)
-                    last_id = int(str(batch[-1]["id"]))
+                    last_pk_params = _pk_last_params(pk_columns, batch[-1])
                     progress.update(task, advance=len(batch))
 
             elapsed = time.monotonic() - start_time

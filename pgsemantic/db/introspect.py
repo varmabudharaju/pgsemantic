@@ -48,6 +48,15 @@ SQL_SAMPLE_AVG_LENGTH = """
     WHERE {column} IS NOT NULL;
 """
 
+# Fallback for small tables where TABLESAMPLE returns 0 rows.
+SQL_FULL_AVG_LENGTH = """
+    SELECT
+        avg(length({column}::TEXT)) AS avg_length,
+        count(*) AS sampled_rows
+    FROM {table}
+    WHERE {column} IS NOT NULL;
+"""
+
 # Check whether the pgvector extension is installed.
 SQL_CHECK_VECTOR_EXTENSION = """
     SELECT extname, extversion
@@ -103,6 +112,7 @@ SEMANTIC_COLUMN_NAMES: frozenset[str] = frozenset({
     "text",
     "summary",
     "notes",
+    "note",
     "bio",
     "review",
     "comment",
@@ -110,6 +120,9 @@ SEMANTIC_COLUMN_NAMES: frozenset[str] = frozenset({
     "details",
     "abstract",
     "excerpt",
+    "title",
+    "question",
+    "answer",
 })
 
 # Column names that are almost never useful for semantic search.
@@ -236,8 +249,14 @@ def sample_avg_length(
     )
 
     result = conn.execute(sql).fetchone()
-    if result is None or result["avg_length"] is None:
-        return (0.0, 0)
+    if result is None or result["avg_length"] is None or int(str(result["sampled_rows"])) == 0:
+        # TABLESAMPLE returned 0 rows (table too small) — fall back to full scan
+        fallback_sql = SQL_FULL_AVG_LENGTH.format(
+            table=qualified_table, column=quoted_column
+        )
+        result = conn.execute(fallback_sql).fetchone()
+        if result is None or result["avg_length"] is None:
+            return (0.0, 0)
     avg_val: float = float(str(result["avg_length"]))
     count_val: int = int(str(result["sampled_rows"]))
     return (avg_val, count_val)
