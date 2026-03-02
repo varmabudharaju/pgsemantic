@@ -19,6 +19,7 @@ from pgsemantic.config import (
     HNSW_M,
     OPENAI_DIMENSIONS,
     OPENAI_MODEL,
+    SHADOW_TABLE_PREFIX,
     ProjectConfig,
     TableConfig,
     load_project_config,
@@ -28,6 +29,7 @@ from pgsemantic.config import (
 from pgsemantic.db.client import ensure_pgvector_extension, get_connection
 from pgsemantic.db.introspect import column_exists, get_primary_key_columns
 from pgsemantic.db.queue import create_queue_table
+from pgsemantic.db.vectors import create_shadow_table
 from pgsemantic.exceptions import ExtensionNotFoundError
 
 console = Console()
@@ -103,6 +105,23 @@ SQL_CREATE_TRIGGER = """
     EXECUTE FUNCTION pgvector_setup_{table}_fn('{column}');
 """
 
+# Trigger for multi-column mode: fires on UPDATE of any watched column.
+SQL_CREATE_TRIGGER_MULTI = """
+    CREATE OR REPLACE TRIGGER pgvector_setup_{table}_trigger
+    AFTER INSERT OR UPDATE OF {column_list} OR DELETE
+    ON "{schema}"."{table}"
+    FOR EACH ROW
+    EXECUTE FUNCTION pgvector_setup_{table}_fn('{column_arg}');
+"""
+
+# HNSW index on shadow table (CONCURRENTLY).
+SQL_CREATE_SHADOW_HNSW_INDEX = """
+    CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_{shadow_table}_embedding_hnsw"
+    ON "{schema}"."{shadow_table}"
+    USING hnsw ("embedding" vector_cosine_ops)
+    WITH (m = {m}, ef_construction = {ef_construction});
+"""
+
 
 def apply_command(
     table: str = typer.Option(
@@ -112,16 +131,26 @@ def apply_command(
         help="Table to enable semantic search on.",
     ),
     column: str = typer.Option(
-        ...,
+        "",
         "--column",
         "-c",
-        help="Text column to embed.",
+        help="Text column to embed (mutually exclusive with --columns).",
+    ),
+    columns: str = typer.Option(
+        "",
+        "--columns",
+        help="Comma-separated columns to concatenate and embed (e.g. 'title,description').",
     ),
     model: str = typer.Option(
         "local",
         "--model",
         "-m",
         help="Embedding provider: 'local' (384d, free) or 'openai' (1536d).",
+    ),
+    external: bool = typer.Option(
+        False,
+        "--external",
+        help="Store embeddings in a separate shadow table (don't modify source table).",
     ),
     db: str = typer.Option(
         "",
@@ -149,6 +178,40 @@ def apply_command(
         ))
         raise typer.Exit(code=1)
 
+    # Validate --column / --columns (mutually exclusive, one required)
+    if column and columns:
+        console.print(Panel(
+            "[red]Cannot use both --column and --columns.[/red]\n\n"
+            "Use --column for a single column or --columns for multiple.",
+            title="Invalid Options",
+            border_style="red",
+        ))
+        raise typer.Exit(code=1)
+
+    if not column and not columns:
+        console.print(Panel(
+            "[red]Either --column or --columns is required.[/red]\n\n"
+            "Example: --column description\n"
+            "    or: --columns title,description",
+            title="Missing Column",
+            border_style="red",
+        ))
+        raise typer.Exit(code=1)
+
+    # Parse column list
+    source_columns: list[str] = (
+        [c.strip() for c in columns.split(",") if c.strip()]
+        if columns
+        else [column]
+    )
+    # Use the first column as the "primary" column for backward compat
+    primary_column = source_columns[0]
+    is_multi = len(source_columns) > 1
+
+    # Resolve storage mode
+    storage_mode = "external" if external else "inline"
+    shadow_table_name = f"{SHADOW_TABLE_PREFIX}{table}" if external else None
+
     # Resolve model dimensions
     if model == "openai":
         dimensions = OPENAI_DIMENSIONS
@@ -157,10 +220,14 @@ def apply_command(
         dimensions = DEFAULT_LOCAL_DIMENSIONS
         model_name = DEFAULT_LOCAL_MODEL
 
+    col_display = ", ".join(source_columns)
     console.print()
     console.print(Panel(
-        f"Setting up semantic search on [cyan]{schema}.{table}.{column}[/cyan]\n"
-        f"Model: [green]{model_name}[/green] ({dimensions} dimensions)",
+        f"Setting up semantic search on [cyan]{schema}.{table}[/cyan]\n"
+        f"Column(s): [cyan]{col_display}[/cyan]\n"
+        f"Model: [green]{model_name}[/green] ({dimensions} dimensions)\n"
+        f"Storage: [green]{storage_mode}[/green]"
+        + (f" → {shadow_table_name}" if shadow_table_name else ""),
         title="pgsemantic apply",
         border_style="blue",
     ))
@@ -174,18 +241,19 @@ def apply_command(
             version_str = ".".join(str(v) for v in pgv_version)
             console.print(f"[green]v{version_str}[/green]")
 
-            # Step 2: Check if source column exists and detect primary key
-            console.print("  [dim][2/9][/dim] Verifying source column...", end=" ")
-            if not column_exists(conn, table, column, schema):
-                console.print("[red]not found[/red]")
-                console.print(Panel(
-                    f"[red]Column '{column}' not found on table "
-                    f"'{schema}.{table}'.[/red]\n\n"
-                    "Check the table and column names and try again.",
-                    title="Column Not Found",
-                    border_style="red",
-                ))
-                raise typer.Exit(code=1)
+            # Step 2: Check if source column(s) exist and detect primary key
+            console.print("  [dim][2/9][/dim] Verifying source column(s)...", end=" ")
+            for src_col in source_columns:
+                if not column_exists(conn, table, src_col, schema):
+                    console.print("[red]not found[/red]")
+                    console.print(Panel(
+                        f"[red]Column '{src_col}' not found on table "
+                        f"'{schema}.{table}'.[/red]\n\n"
+                        "Check the table and column names and try again.",
+                        title="Column Not Found",
+                        border_style="red",
+                    ))
+                    raise typer.Exit(code=1)
 
             pk_columns = get_primary_key_columns(conn, table, schema)
             if not pk_columns:
@@ -201,46 +269,62 @@ def apply_command(
             pk_display = ", ".join(pk_columns)
             console.print(f"[green]found[/green] (PK: {pk_display})")
 
-            # Step 3: Check if embedding column already exists
-            console.print("  [dim][3/9][/dim] Checking embedding column...", end=" ")
-            if column_exists(conn, table, "embedding", schema):
-                console.print("[yellow]already exists[/yellow]")
+            # Step 3: Embedding storage setup
+            if external:
+                # External mode: create shadow table
                 console.print(
-                    "  [dim]    Skipping ALTER TABLE — embedding column "
-                    "already present.[/dim]"
+                    "  [dim][3/9][/dim] Creating shadow table...", end=" "
+                )
+                create_shadow_table(
+                    conn,
+                    shadow_table=shadow_table_name,
+                    dimensions=dimensions,
+                    schema=schema,
+                )
+                console.print("[green]done[/green]")
+                console.print(
+                    f"  [dim]    Your table remains unchanged. Embeddings "
+                    f"stored in {shadow_table_name}[/dim]"
                 )
             else:
-                console.print("[dim]needs creation[/dim]")
+                # Inline mode: check/add embedding column on source table
+                console.print("  [dim][3/9][/dim] Checking embedding column...", end=" ")
+                if column_exists(conn, table, "embedding", schema):
+                    console.print("[yellow]already exists[/yellow]")
+                    console.print(
+                        "  [dim]    Skipping ALTER TABLE — embedding column "
+                        "already present.[/dim]"
+                    )
+                else:
+                    console.print("[dim]needs creation[/dim]")
 
-                # Preview SQL and ask for confirmation
-                alter_sql = (
-                    f'ALTER TABLE "{schema}"."{table}" '
-                    f'ADD COLUMN "embedding" vector({dimensions});'
-                )
-                console.print()
-                console.print(Panel(
-                    f"[cyan]{alter_sql}[/cyan]",
-                    title="SQL Preview — ALTER TABLE",
-                    border_style="yellow",
-                ))
+                    alter_sql = (
+                        f'ALTER TABLE "{schema}"."{table}" '
+                        f'ADD COLUMN "embedding" vector({dimensions});'
+                    )
+                    console.print()
+                    console.print(Panel(
+                        f"[cyan]{alter_sql}[/cyan]",
+                        title="SQL Preview — ALTER TABLE",
+                        border_style="yellow",
+                    ))
 
-                if not typer.confirm(
-                    "This will add an embedding column to your table. Continue?"
-                ):
-                    console.print("[yellow]Aborted.[/yellow]")
-                    raise typer.Exit(code=0)
+                    if not typer.confirm(
+                        "This will add an embedding column to your table. Continue?"
+                    ):
+                        console.print("[yellow]Aborted.[/yellow]")
+                        raise typer.Exit(code=0)
 
-                # Step 4: Add embedding column
-                console.print(
-                    "  [dim][4/9][/dim] Adding embedding column...",
-                    end=" ",
-                )
-                sql = SQL_ADD_VECTOR_COLUMN.format(
-                    schema=schema, table=table, dimensions=dimensions
-                )
-                conn.execute(sql)
-                conn.commit()
-                console.print("[green]done[/green]")
+                    console.print(
+                        "  [dim][4/9][/dim] Adding embedding column...",
+                        end=" ",
+                    )
+                    sql = SQL_ADD_VECTOR_COLUMN.format(
+                        schema=schema, table=table, dimensions=dimensions
+                    )
+                    conn.execute(sql)
+                    conn.commit()
+                    console.print("[green]done[/green]")
 
             # Step 5: Create HNSW index (requires autocommit)
             console.print(
@@ -249,14 +333,21 @@ def apply_command(
             )
 
         # CREATE INDEX CONCURRENTLY cannot run inside a transaction block.
-        # Open a fresh connection with autocommit enabled.
         with psycopg.connect(database_url, autocommit=True) as autocommit_conn:
-            index_sql = SQL_CREATE_HNSW_INDEX.format(
-                schema=schema,
-                table=table,
-                m=HNSW_M,
-                ef_construction=HNSW_EF_CONSTRUCTION,
-            )
+            if external:
+                index_sql = SQL_CREATE_SHADOW_HNSW_INDEX.format(
+                    schema=schema,
+                    shadow_table=shadow_table_name,
+                    m=HNSW_M,
+                    ef_construction=HNSW_EF_CONSTRUCTION,
+                )
+            else:
+                index_sql = SQL_CREATE_HNSW_INDEX.format(
+                    schema=schema,
+                    table=table,
+                    m=HNSW_M,
+                    ef_construction=HNSW_EF_CONSTRUCTION,
+                )
             autocommit_conn.execute(index_sql)
         console.print("[green]done[/green]")
 
@@ -282,9 +373,20 @@ def apply_command(
             console.print(
                 "  [dim][8/9][/dim] Installing trigger on table...", end=" "
             )
-            trigger_sql = SQL_CREATE_TRIGGER.format(
-                schema=schema, table=table, column=column
-            )
+            if is_multi:
+                # Multi-column trigger: fires on UPDATE OF col1, col2, ...
+                column_list = ", ".join(f'"{c}"' for c in source_columns)
+                column_arg = "+".join(source_columns)
+                trigger_sql = SQL_CREATE_TRIGGER_MULTI.format(
+                    schema=schema,
+                    table=table,
+                    column_list=column_list,
+                    column_arg=column_arg,
+                )
+            else:
+                trigger_sql = SQL_CREATE_TRIGGER.format(
+                    schema=schema, table=table, column=primary_column
+                )
             conn.execute(trigger_sql)
             conn.commit()
             console.print("[green]done[/green]")
@@ -294,19 +396,27 @@ def apply_command(
         _save_config(
             table=table,
             schema=schema,
-            column=column,
+            column=primary_column,
             model=model,
             model_name=model_name,
             dimensions=dimensions,
             primary_key=pk_columns,
+            columns=source_columns if is_multi else None,
+            storage_mode=storage_mode,
+            shadow_table=shadow_table_name,
         )
         console.print("[green]done[/green]")
 
         # Summary
         console.print()
+        storage_note = (
+            f"\nEmbeddings stored in: [cyan]{shadow_table_name}[/cyan]"
+            if external else ""
+        )
         console.print(Panel(
             f"[green]Semantic search is ready on "
-            f"{schema}.{table}.{column}[/green]\n\n"
+            f"{schema}.{table} ({col_display})[/green]"
+            f"{storage_note}\n\n"
             "Next steps:\n"
             f"  1. Embed existing rows:  "
             f"[cyan]pgsemantic index --table {table}[/cyan]\n"
@@ -347,6 +457,9 @@ def _save_config(
     model_name: str,
     dimensions: int,
     primary_key: list[str] | None = None,
+    columns: list[str] | None = None,
+    storage_mode: str = "inline",
+    shadow_table: str | None = None,
 ) -> None:
     """Save or update the .pgsemantic.json project config."""
     from pgsemantic import __version__
@@ -370,6 +483,9 @@ def _save_config(
         hnsw_ef_construction=HNSW_EF_CONSTRUCTION,
         applied_at=datetime.now(tz=timezone.utc).isoformat(),
         primary_key=primary_key or ["id"],
+        columns=columns,
+        storage_mode=storage_mode,
+        shadow_table=shadow_table,
     )
     config.tables.append(table_config)
     save_project_config(config)

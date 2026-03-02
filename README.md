@@ -8,400 +8,420 @@
 
 Zero-config CLI that bootstraps production-quality semantic search on any existing PostgreSQL database — local or remote (Supabase, Neon, RDS, Railway). No pgvector expertise required.
 
-**You don't download your data.** You don't move anything. You give pgsemantic your Postgres connection string — whether it's localhost or a cloud database on the other side of the world — and it sets up semantic search in place.
+---
 
-## What it does
-
-- Scans your database and scores columns for semantic search suitability
-- Adds a vector embedding column + HNSW index to your existing table (nothing else changes)
-- Embeds all your existing rows using local models (no API key needed) or OpenAI
-- Installs a trigger so new/updated rows are automatically queued for embedding
-- Provides an MCP server so Claude Desktop and Cursor can search your database by meaning
-- Works with **any** Postgres host — local Docker, Supabase, Neon, RDS, Railway, bare metal
-
-## Installation
+## Install
 
 ```bash
 pip install pgsemantic
 ```
 
-## Quickstart (Local Database)
+```
+$ pgsemantic --help
+
+ Usage: pgsemantic [OPTIONS] COMMAND [ARGS]...
+
+ Zero-config semantic search bootstrap for any PostgreSQL database.
+
+╭─ Commands ───────────────────────────────────────────────────────────────────╮
+│ inspect    Scan a database and score columns for semantic search suitability │
+│ apply      Set up semantic search on a table                                │
+│ index      Bulk embed existing rows where embedding IS NULL                 │
+│ search     Search your database using natural language                      │
+│ worker     Start the background worker daemon                               │
+│ serve      Start the pgsemantic MCP server                                  │
+│ status     Show embedding health dashboard for all watched tables           │
+│ integrate  Set up AI agent integrations (Claude Desktop)                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+---
+
+## Full Walkthrough
+
+Here's the complete flow from zero to semantic search. Every output below is real terminal output, not mockups.
+
+### Step 1: Connect to your database
+
+pgsemantic needs a Postgres connection string. You can either pass it with `--db` or save it in a `.env` file:
 
 ```bash
-# 1. Start a local Postgres with pgvector
-docker-compose up -d
-
-# 2. Scan your database — see which columns are good candidates
+# Option A: pass directly (good for trying things out)
 pgsemantic inspect postgresql://postgres:password@localhost:5432/mydb
 
-# 3. Set up semantic search on a table
-pgsemantic apply --table products --column description
-
-# 4. Embed all existing rows
-pgsemantic index --table products
-
-# 5. Search!
-pgsemantic search "wireless noise-canceling headphones" --table products
+# Option B: save in a .env file (recommended)
+echo 'DATABASE_URL=postgresql://postgres:password@localhost:5432/mydb' > .env
+pgsemantic inspect   # reads from .env automatically
 ```
 
-## Quickstart (Remote Database)
+**Where to find your connection string:**
 
-**Works with any Postgres that has pgvector enabled.** Just pass your connection string:
+| Provider | Where to find it |
+|----------|-----------------|
+| **Local Docker** | The URL you set when creating the container. With our docker-compose.yml: `postgresql://postgres:password@localhost:5432/pgvector_dev` |
+| **Supabase** | Dashboard → Settings → Database → Connection string → URI |
+| **Neon** | Dashboard → your project → Connection Details → Connection string |
+| **Railway** | Dashboard → your Postgres service → Variables → `DATABASE_URL` |
+| **AWS RDS** | `postgresql://USER:PASS@your-instance.region.rds.amazonaws.com:5432/dbname` |
 
-```bash
-# Supabase
-pgsemantic inspect postgresql://postgres.xxxx:password@aws-0-us-east-1.pooler.supabase.com:6543/postgres
-pgsemantic apply --table products --column description --db postgresql://postgres.xxxx:password@aws-0-us-east-1.pooler.supabase.com:6543/postgres
+> **Tip:** The `.env` file contains your database password. Add `.env` to your `.gitignore` so it's never committed to git.
 
-# Neon
-pgsemantic apply --table articles --column content --db postgresql://user:pass@ep-cool-rain-123456.us-east-2.aws.neon.tech/mydb
-
-# Amazon RDS
-pgsemantic apply --table tickets --column body --db postgresql://admin:pass@mydb.abc123.us-east-1.rds.amazonaws.com:5432/mydb
-
-# Railway
-pgsemantic apply --table docs --column content --db postgresql://postgres:pass@roundhouse.proxy.rlwy.net:12345/railway
-```
-
-All commands accept `--db` to override the `DATABASE_URL` environment variable. Set it once in `.env` and you won't need `--db` at all:
-
-```bash
-# .env
-DATABASE_URL=postgresql://user:pass@your-cloud-host:5432/yourdb
-```
-
-Then every command just works:
-
-```bash
-pgsemantic inspect
-pgsemantic apply --table products --column description
-pgsemantic index --table products
-pgsemantic search "noise canceling" --table products
-```
-
----
-
-## Commands Reference
-
-### `pgsemantic inspect`
-
-Scan a database and score every text column for semantic search suitability.
-
-```bash
-pgsemantic inspect <DATABASE_URL>
-pgsemantic inspect --json    # machine-readable output
-```
-
-**Example output:**
+### Step 2: Scan your database
 
 ```
-╭────────────────────────────────────────────────────────────────────╮
-│     Semantic Search Candidates — postgresql://localhost/mydb        │
-╰────────────────────────────────────────────────────────────────────╯
+$ pgsemantic inspect postgresql://postgres:password@localhost:5432/pgvector_dev
 
- Table               Column           Score   Avg Length   Type
- ──────────────────────────────────────────────────────────────────
- products            description      ★★★    847 chars    text
- support_tickets     body             ★★★    1,203 chars  text
- articles            content          ★★★    4,821 chars  text
- users               bio              ★★☆    143 chars    text
- products            name             ★☆☆    34 chars     varchar
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Semantic Search Candidates — localhost:5432/pgvector_dev                      │
+│ pgvector 0.8.2                                                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━┓
+┃ Table           ┃ Column        ┃ Score ┃  Avg Length ┃ Type ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━┩
+│ clinical_trials │ eligibility   │ ★★★   │ 1,382 chars │ text │
+│ clinical_trials │ brief_summary │ ★★★   │   711 chars │ text │
+│ products        │ description   │ ★★★   │   108 chars │ text │
+│ clinical_trials │ title         │ ★★★   │    85 chars │ text │
+│ products        │ name          │ ★☆☆   │    20 chars │ text │
+│ products        │ category      │ ★☆☆   │     9 chars │ text │
+└─────────────────┴───────────────┴───────┴─────────────┴──────┘
 
-ℹ  Scoring is heuristic (text length + column name patterns).
-   Always verify recommendations make sense for your use case.
+Scoring is heuristic (text length + column name patterns).
+Always verify recommendations make sense for your use case.
 
 Next step:
-  pgsemantic apply --table products --column description
+  pgsemantic apply --table clinical_trials --column eligibility
 ```
 
-Scoring is based on average text length and column name patterns — longer text in columns named `description`, `body`, `content`, etc. score higher. It's a heuristic to help you decide, not a guarantee.
+`inspect` scans every text column in your database, samples average text length, and scores them. Longer text in columns named `description`, `body`, `content`, etc. scores higher. It's a heuristic to help you decide what to embed.
 
----
-
-### `pgsemantic apply`
-
-Set up semantic search on a table. This is the main setup command.
-
-```bash
-pgsemantic apply --table <TABLE> --column <COLUMN> [--model local|openai] [--db <URL>]
-```
-
-**What it does (9 steps):**
-
-1. Checks/installs pgvector extension
-2. Detects the table's primary key
-3. Shows you the exact SQL it will run and asks for confirmation
-4. Adds an `embedding vector(384)` column to your table
-5. Creates an HNSW index (CONCURRENTLY — no downtime)
-6. Creates the job queue table (`pgvector_setup_queue`)
-7. Installs the trigger function
-8. Installs a trigger on your table for INSERT/UPDATE/DELETE
-9. Saves config to `.pgsemantic.json`
-
-**Example output:**
+### Step 3: Set up semantic search on a table
 
 ```
-✓ pgvector 0.8.0 detected
-✓ Primary key detected: id (integer)
+$ pgsemantic apply --table products --column description
 
-About to run:
+╭────────────────────────────── pgsemantic apply ──────────────────────────────╮
+│ Setting up semantic search on public.products                                │
+│ Column(s): description                                                       │
+│ Model: all-MiniLM-L6-v2 (384 dimensions)                                     │
+│ Storage: inline                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
 
-  ALTER TABLE products ADD COLUMN embedding vector(384);
-  CREATE INDEX CONCURRENTLY ON products USING hnsw (embedding vector_cosine_ops)
-    WITH (m = 16, ef_construction = 64);
+  [1/9] Checking pgvector extension... v0.8.2
+  [2/9] Verifying source column(s)... found (PK: id)
+  [3/9] Checking embedding column... needs creation
 
-Proceed? [y/N]: y
+╭───────────────────────── SQL Preview — ALTER TABLE ──────────────────────────╮
+│ ALTER TABLE "public"."products" ADD COLUMN "embedding" vector(384);          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+This will add an embedding column to your table. Continue? [y/N]: y
 
-✓ Column 'embedding vector(384)' added to products
-✓ HNSW index created (m=16, ef_construction=64)
-✓ Queue table pgvector_setup_queue created
-✓ Trigger function pgvector_setup_notify_fn installed
-✓ Trigger pgvector_setup_products_trigger installed
-✓ Config saved to .pgsemantic.json
+  [4/9] Adding embedding column... done
+  [5/9] Creating HNSW index (CONCURRENTLY)... done
+  [6/9] Creating queue table... done
+  [7/9] Installing trigger function... done
+  [8/9] Installing trigger on table... done
+  [9/9] Saving config... done
+
+╭─────────────────────────────── Setup Complete ───────────────────────────────╮
+│ Semantic search is ready on public.products (description)                    │
+│                                                                              │
+│ Next steps:                                                                  │
+│   1. Embed existing rows:  pgsemantic index --table products                 │
+│   2. Start live sync:      pgsemantic worker                                 │
+│   3. Start MCP server:     pgsemantic serve                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+`apply` shows you the exact SQL it will run and asks for confirmation before touching your table. It adds ONE column (`embedding`) and ONE trigger. Nothing else changes.
+
+### Step 4: Embed your existing rows
+
+```
+$ pgsemantic index --table products
+
+Indexing public.products (description) with all-MiniLM-L6-v2 (batch size: 32,
+storage: inline)
+
+  Total rows with content: 20
+  Already embedded:        0
+  Remaining:               20
+
+  Embedding rows... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 20/20 0:00:00 0:00:00
+
+Indexed 20 rows in 0.3s (4,631 rows/min)
+  Coverage: 20/20 (100.0%)
 
 Next steps:
-  pgsemantic index --table products    # embed existing rows
-  pgsemantic worker                    # keep new rows embedded automatically
-  pgsemantic serve                     # start MCP server for Claude/Cursor
+  Start live sync:   pgsemantic worker
+  Start MCP server:  pgsemantic serve
 ```
 
-**Important:** pgsemantic only adds ONE column (`embedding`) and ONE trigger to your table. It never modifies, renames, or drops any existing columns, constraints, or indexes.
+`index` generates vector embeddings for every row. It uses the local model by default — no API key, no internet required (after first download). Re-running only processes rows that haven't been embedded yet, so it's safe to interrupt and resume.
 
-**Options:**
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--table` | required | Table to set up |
-| `--column` | required | Text column to embed |
-| `--model` | `local` | Embedding model: `local` (all-MiniLM-L6-v2, 384d), `openai` (text-embedding-3-small, 1536d) |
-| `--db` | `DATABASE_URL` | Database connection string |
-| `--schema` | `public` | Postgres schema |
-
----
-
-### `pgsemantic index`
-
-Bulk embed all existing rows that don't have embeddings yet.
-
-```bash
-pgsemantic index --table <TABLE> [--batch-size 32] [--db <URL>]
-```
-
-**Example output:**
+### Step 5: Search!
 
 ```
-Indexing products.description ━━━━━━━━━━━━━━━━━━━━ 12,000/12,000  100%  542 rows/min
-✓ Indexed 12,000 rows in products.description
-```
+$ pgsemantic search "wireless headphones with good battery" --table products
 
-- **Idempotent** — re-running only processes rows where `embedding IS NULL`
-- **Resumable** — if interrupted, just re-run and it picks up where it left off
-- Uses keyset pagination for consistent performance on large tables
-
----
-
-### `pgsemantic search`
-
-Search your database using natural language, right from the terminal.
-
-```bash
-pgsemantic search "<QUERY>" --table <TABLE> [--limit 5] [--db <URL>]
-```
-
-**Example:**
-
-```bash
-pgsemantic search "wireless headphones with good battery" --table products
-```
-
-```
 Results for: "wireless headphones with good battery" in products.description
 
-  1. (score: 0.847)  id: 142  name: Sony WH-1000XM5
-  Wireless noise-canceling headphones with 30-hour battery life...
+  1. (score: 0.698)  id: 2  name: Bose QuietComfort 45  category: electronics  price: 329.99
+  Comfortable over-ear wireless headphones with world-class noise cancellation,
+  24-hour battery life, and high-fidelity audio
 
-  2. (score: 0.812)  id: 89  name: Bose QuietComfort 45
-  Premium wireless headphones featuring 24-hour battery...
+  2. (score: 0.673)  id: 1  name: Sony WH-1000XM5  category: electronics  price: 349.99
+  Premium wireless noise-canceling headphones with 30-hour battery life,
+  exceptional sound quality, and comfortable fit for all-day listening
 
-  3. (score: 0.798)  id: 234  name: Apple AirPods Max
-  Over-ear wireless headphones with 20-hour battery...
+  3. (score: 0.604)  id: 3  name: Apple AirPods Max  category: electronics  price: 549.99
+  High-fidelity wireless over-ear headphones with active noise cancellation,
+  spatial audio, and premium build quality
+
+  4. (score: 0.569)  id: 4  name: Samsung Galaxy Buds Pro  category: electronics  price: 199.99
+  True wireless earbuds with intelligent active noise cancellation, 360 audio,
+  and water resistance for workouts
+
+  5. (score: 0.533)  id: 17  name: Sony WF-1000XM5 Earbuds  category: electronics  price: 279.99
+  Premium true wireless earbuds with industry-leading noise cancellation and
+  high-resolution audio in a compact design
 ```
 
----
+Natural language in, ranked results out. It works with any query:
 
-### `pgsemantic worker`
+```
+$ pgsemantic search "espresso machine" --table products --limit 3
 
-Start the background worker that keeps embeddings in sync as your data changes.
+Results for: "espresso machine" in products.description
+
+  1. (score: 0.738)  id: 19  name: Breville Barista Express  category: kitchen  price: 699.99
+  Semi-automatic espresso machine with built-in grinder, precise temperature
+  control, and micro-foam milk texturing
+
+  2. (score: 0.303)  id: 11  name: Instant Pot Duo 7-in-1  category: kitchen  price: 89.99
+  Multi-use programmable pressure cooker, slow cooker, rice cooker, steamer, and
+  more in one appliance
+
+  3. (score: 0.253)  id: 13  name: Yeti Rambler Tumbler  category: kitchen  price: 35.00
+  Vacuum-insulated stainless steel tumbler that keeps drinks cold for hours,
+  dishwasher safe
+```
+
+### Step 6: Keep embeddings in sync (optional)
 
 ```bash
-pgsemantic worker [--db <URL>]
-```
+$ pgsemantic worker
 
-**How it works:**
-
-1. Your app inserts/updates/deletes rows normally
-2. The trigger (installed by `apply`) writes a job to `pgvector_setup_queue`
-3. The worker polls the queue, generates embeddings, and writes them back
-4. Uses `SELECT FOR UPDATE SKIP LOCKED` — safe for multiple concurrent workers
-
-```
-INFO  Worker started. Polling pgvector_setup_queue every 500ms.
+INFO  Worker started. Polling pgvector_setup_queue every 500ms, batch size 10.
 INFO  Claimed 3 jobs from queue.
-INFO  Embedded products#142 (description, 384d) in 38ms
-INFO  Embedded products#143 (description, 384d) in 41ms
-INFO  Embedded products#144 (description, 384d) in 39ms
-INFO  Queue empty. Sleeping 500ms.
+INFO  Embedded products#21 (description, 384d)
+INFO  Embedded products#22 (description, 384d)
+INFO  Embedded products#23 (description, 384d)
+INFO  Worker alive, queue empty.
 ```
 
-The worker handles connection drops with exponential backoff (1s → 2s → 4s → ... → 30s max) and never crashes permanently.
+The worker runs in the background. When your app inserts/updates/deletes rows, the trigger fires, the worker picks up the job, and the embedding is updated automatically. Stop it with `Ctrl+C`.
 
----
+### Step 7: Check health
 
-### `pgsemantic status`
+```
+$ pgsemantic status
 
-Show embedding health for all watched tables.
+Embedding Status
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Table           ┃ Column    ┃ Model            ┃ Storage  ┃ Coverage   ┃ Pending ┃ Failed ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ clinical_trials │ brief_sum │ all-MiniLM-L6-v2 │ inline   │ 3003/3003  │       0 │      0 │
+│                 │           │                  │          │ (100.0%)   │         │        │
+│ products        │ descript  │ all-MiniLM-L6-v2 │ inline   │   20/20    │       0 │      0 │
+│                 │           │                  │          │ (100.0%)   │         │        │
+│ test_products   │ title,    │ all-MiniLM-L6-v2 │ external │   10/10    │       0 │      0 │
+│                 │ descript  │                  │          │ (100.0%)   │         │        │
+└─────────────────┴───────────┴──────────────────┴──────────┴────────────┴─────────┴────────┘
+```
+
+### Step 8: Connect Claude Desktop (optional)
 
 ```bash
-pgsemantic status [--db <URL>]
-```
-
-**Example output:**
-
-```
-╭────────────────────────────────────────────────────────────────────────────╮
-│                      Embedding Health Dashboard                            │
-╰────────────────────────────────────────────────────────────────────────────╯
-
- Table               Column       Total   Embedded  Coverage  Queue     Model
- ───────────────────────────────────────────────────────────────────────────
- products            description  12,847  12,843    99.97%    0 pending  all-MiniLM-L6-v2
- support_tickets     body          3,201   3,201    100%      1 pending  all-MiniLM-L6-v2
- articles            content         847     847    100%      0 pending  all-MiniLM-L6-v2
-
-⚠  4 rows in 'products' are missing embeddings.
-   Run: pgsemantic index --table products
-
-✓  Worker is keeping embeddings in sync.
-```
-
----
-
-### `pgsemantic serve`
-
-Start the MCP server so AI agents (Claude Desktop, Cursor) can search your database.
-
-```bash
-pgsemantic serve                              # stdio (for Claude Desktop / Cursor)
-pgsemantic serve --transport http --port 3000  # HTTP/SSE (for remote agents)
-```
-
-The MCP server exposes three tools:
-
-| Tool | Description |
-|------|-------------|
-| `semantic_search` | Natural-language similarity search |
-| `hybrid_search` | Semantic search + SQL WHERE filters (e.g. `{"category": "laptop", "price_max": 1500}`) |
-| `get_embedding_status` | Coverage %, queue depth, model info |
-
----
-
-### `pgsemantic integrate`
-
-Auto-configure Claude Desktop to connect to pgsemantic.
-
-```bash
-pgsemantic integrate claude
-```
-
-This writes the MCP server configuration directly to your Claude Desktop config file:
-
-```
-✓ Claude Desktop config updated at:
-  ~/Library/Application Support/Claude/claude_desktop_config.json
-
-  Added MCP server "pgsemantic" with:
-    command: pgsemantic serve
-    DATABASE_URL: postgresql://...
-
-Restart Claude Desktop to activate.
-
-Claude will now have access to:
-  • semantic_search — search any indexed table by meaning
-  • hybrid_search — semantic search + SQL filters
-  • get_embedding_status — check embedding health
-
-Try asking Claude:
-  "Search the products table for wireless headphones under $100"
-```
-
----
-
-## Claude Desktop Integration
-
-Full setup in 4 steps:
-
-```bash
-# 1. Install pgsemantic
-pip install pgsemantic
-
-# 2. Set up your table
-pgsemantic apply --table products --column description --db postgresql://...
-pgsemantic index --table products --db postgresql://...
-
-# 3. Auto-configure Claude Desktop
+# Auto-configure Claude Desktop
 pgsemantic integrate claude
 
-# 4. Restart Claude Desktop — done!
+# Restart Claude Desktop, then ask:
+# "Search the products table for wireless headphones under $100"
+# "Find articles about machine learning"
 ```
-
-Now you can ask Claude things like:
-- "Search the products table for wireless headphones under $100"
-- "Find support tickets about login issues"
-- "Show me articles related to machine learning"
 
 Claude calls `semantic_search` or `hybrid_search` behind the scenes and gets ranked results from your actual database.
 
 ---
 
-## Supported Postgres Hosts
+## Multi-Column Search (`--columns`)
 
-pgsemantic works with any Postgres that has the pgvector extension available.
+Search across multiple columns at once — for example, finding products by both their name and description:
 
-| Host | pgvector Support | How to Enable | Notes |
-|------|-----------------|---------------|-------|
-| **Docker (local)** | Pre-installed | Use `ankane/pgvector:pg16` image | Included in our docker-compose.yml |
-| **Supabase** | Built-in | Dashboard → Database → Extensions → "vector" | Works on free tier |
-| **Neon** | Built-in | `CREATE EXTENSION vector;` as project owner | Works on free tier |
-| **Railway** | Postgres 15+ | `CREATE EXTENSION vector;` as postgres user | Works |
-| **AWS RDS** | Postgres 15+ | `CREATE EXTENSION vector;` with `rds_superuser` role | Note: not `superuser` |
-| **Google Cloud SQL** | Postgres 15+ | `CREATE EXTENSION vector;` as `cloudsqlsuperuser` | Flexible Server |
-| **Azure Database** | Flexible Server, PG 15+ | `CREATE EXTENSION vector;` | Works |
-| **Bare metal** | Manual install | `apt install postgresql-16-pgvector` then `CREATE EXTENSION vector;` | Full superuser access |
+```
+$ pgsemantic apply --table test_products --columns title,description --external
 
-When pgvector isn't installed, `pgsemantic apply` tries to install it automatically. If that fails (permissions), it prints host-specific instructions and exits cleanly.
+╭────────────────────────────── pgsemantic apply ──────────────────────────────╮
+│ Setting up semantic search on public.test_products                           │
+│ Column(s): title, description                                                │
+│ Model: all-MiniLM-L6-v2 (384 dimensions)                                     │
+│ Storage: external → pgsemantic_embeddings_test_products                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+  [1/9] Checking pgvector extension... v0.8.2
+  [2/9] Verifying source column(s)... found (PK: id)
+  [3/9] Creating shadow table... done
+      Your table remains unchanged. Embeddings stored in
+      pgsemantic_embeddings_test_products
+  [5/9] Creating HNSW index (CONCURRENTLY)... done
+  [6/9] Creating queue table... done
+  [7/9] Installing trigger function... done
+  [8/9] Installing trigger on table... done
+  [9/9] Saving config... done
+
+╭─────────────────────────────── Setup Complete ───────────────────────────────╮
+│ Semantic search is ready on public.test_products (title, description)        │
+│ Embeddings stored in: pgsemantic_embeddings_test_products                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+Columns are concatenated with field labels before embedding:
+
+```
+title: Sony WH-1000XM5
+description: Wireless noise-canceling headphones with 30-hour battery life...
+```
+
+Then index and search work exactly the same:
+
+```
+$ pgsemantic index --table test_products
+
+Indexing public.test_products (title, description) with all-MiniLM-L6-v2
+(batch size: 32, storage: external)
+
+  Total rows with content: 10
+  Already embedded:        0
+  Remaining:               10
+
+  Embedding rows... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 10/10 0:00:00 0:00:00
+
+Indexed 10 rows in 0.4s (1,370 rows/min)
+  Coverage: 10/10 (100.0%)
+```
+
+```
+$ pgsemantic search "warm jacket for hiking" --table test_products
+
+Results for: "warm jacket for hiking" in test_products.title
+
+  1. (score: 0.581)  id: 5  North Face Thermoball
+  Warm and compressible insulated jacket with synthetic fill for wet conditions
+
+  2. (score: 0.507)  id: 4  Patagonia Nano Puff
+  Lightweight insulated jacket perfect for cold weather hiking and outdoor adventures
+```
+
+---
+
+## External Storage Mode (`--external`)
+
+By default, pgsemantic adds an `embedding` column directly to your source table. If you can't or don't want to alter your production table (no ALTER permissions, strict schema policies, etc.), use `--external`:
+
+```bash
+pgsemantic apply --table products --column description --external
+```
+
+This creates a separate **shadow table** to store embeddings. Your source table stays completely untouched:
+
+```
+-- Your source table — NO embedding column, no changes at all
+SELECT column_name FROM information_schema.columns WHERE table_name = 'test_products';
+
+ column_name
+─────────────
+ id
+ title
+ description
+ category
+ price
+
+-- Embeddings live in a separate shadow table
+SELECT row_id, source_column, model_name FROM pgsemantic_embeddings_test_products LIMIT 3;
+
+ row_id │  source_column    │    model_name
+────────┼───────────────────┼──────────────────
+ 1      │ title+description │ all-MiniLM-L6-v2
+ 2      │ title+description │ all-MiniLM-L6-v2
+ 3      │ title+description │ all-MiniLM-L6-v2
+```
+
+**How updates and deletes work with `--external`:**
+
+- **INSERT/UPDATE** — the worker generates a new embedding and upserts it into the shadow table (`INSERT ... ON CONFLICT DO UPDATE`)
+- **DELETE** — the worker deletes the corresponding row from the shadow table
+- **Search** — pgsemantic automatically JOINs the shadow table to your source table at query time, so search results look exactly the same
+
+The shadow table schema:
+
+```sql
+CREATE TABLE pgsemantic_embeddings_{table} (
+    row_id        TEXT PRIMARY KEY,          -- stringified PK from your source table
+    embedding     vector(384),               -- the embedding vector
+    source_column TEXT NOT NULL,             -- which column(s) were embedded
+    model_name    TEXT NOT NULL,             -- model used to generate the embedding
+    updated_at    TIMESTAMPTZ DEFAULT NOW()  -- when the embedding was last updated
+);
+```
+
+You can combine `--external` with `--columns`:
+
+```bash
+# Multi-column + external: search across title and description,
+# without modifying the products table at all
+pgsemantic apply --table products --columns title,description --external
+```
 
 ---
 
 ## Embedding Models
 
-| Model | Provider | Dimensions | Cost | Speed | API Key Required |
-|-------|----------|-----------|------|-------|-----------------|
-| **all-MiniLM-L6-v2** | Local (sentence-transformers) | 384 | Free | ~500+ rows/min (CPU) | No |
-| **nomic-embed-text** | Ollama (local) | 768 | Free | ~300+ rows/min (CPU) | No |
-| **text-embedding-3-small** | OpenAI | 1536 | $0.02/1M tokens | ~1000+ rows/min | Yes |
-
-**Default:** `all-MiniLM-L6-v2` — runs locally, no API key needed, 22 MB download on first use. Good for development, demos, and small-to-medium datasets.
+| Model | Provider | Dimensions | Cost | API Key Required |
+|-------|----------|-----------|------|-----------------|
+| **all-MiniLM-L6-v2** (default) | Local (sentence-transformers) | 384 | Free | No |
+| **nomic-embed-text** | Ollama (local) | 768 | Free | No |
+| **text-embedding-3-small** | OpenAI | 1536 | $0.02/1M tokens | Yes |
 
 ```bash
 # Use default local model (no API key needed)
 pgsemantic apply --table products --column description
 
-# Use OpenAI for higher quality embeddings
+# Use OpenAI (set OPENAI_API_KEY in .env first)
 pgsemantic apply --table products --column description --model openai
 
-# Use Ollama for better local quality (requires Ollama running)
+# Use Ollama (requires: ollama serve && ollama pull nomic-embed-text)
 pgsemantic apply --table products --column description --model ollama
 ```
+
+---
+
+## Supported Postgres Hosts
+
+Works with any Postgres that has the pgvector extension.
+
+| Host | How to Enable pgvector |
+|------|----------------------|
+| **Docker (local)** | Use `ankane/pgvector:pg16` image (included in our docker-compose.yml) |
+| **Supabase** | Dashboard → Database → Extensions → "vector" |
+| **Neon** | `CREATE EXTENSION vector;` as project owner |
+| **Railway** | `CREATE EXTENSION vector;` as postgres user |
+| **AWS RDS** | `CREATE EXTENSION vector;` with `rds_superuser` role |
+| **Google Cloud SQL** | `CREATE EXTENSION vector;` as `cloudsqlsuperuser` |
+| **Azure Database** | `CREATE EXTENSION vector;` (Flexible Server, PG 15+) |
+| **Bare metal** | `apt install postgresql-16-pgvector` then `CREATE EXTENSION vector;` |
+
+When pgvector isn't installed, `pgsemantic apply` tries to install it automatically. If that fails (permissions), it prints host-specific instructions and exits cleanly.
 
 ---
 
@@ -449,133 +469,108 @@ pgsemantic apply --table products --column description --model ollama
 
 **Key design decisions:**
 
-- **Embedding column lives on your source table** — no central embeddings table. This avoids cross-table HNSW recall degradation and keeps queries simple.
+- **Embedding column lives on your source table** (by default) — no central embeddings table. Use `--external` if you prefer a separate shadow table.
 - **Persistent queue, not LISTEN/NOTIFY** — LISTEN/NOTIFY drops events silently under load. The queue table with `SELECT FOR UPDATE SKIP LOCKED` never loses events and survives process crashes.
-- **HNSW index, not IVFFlat** — HNSW requires no training step, handles inserts without full rebuild, and achieves >95% recall.
-- **Pre-filtered hybrid search** — Uses `hnsw.iterative_scan = relaxed_order` (pgvector ≥0.8.0) to combine vector similarity with SQL WHERE filters efficiently.
+- **HNSW index, not IVFFlat** — no training step, handles inserts without full rebuild, >95% recall.
+- **Pre-filtered hybrid search** — Uses `hnsw.iterative_scan = relaxed_order` (pgvector >=0.8.0) to combine vector similarity with SQL WHERE filters in a single query.
 
 ---
 
-## FAQ
+## Commands Reference
 
-### Does this modify my existing tables?
+| Command | Description |
+|---------|-------------|
+| `pgsemantic inspect <DB_URL>` | Scan and score columns for semantic search suitability |
+| `pgsemantic apply --table T --column C` | Set up semantic search: extension, column, index, trigger |
+| `pgsemantic index --table T` | Bulk embed all existing rows |
+| `pgsemantic search "query" --table T` | Natural language search from the terminal |
+| `pgsemantic worker` | Background daemon that keeps embeddings in sync |
+| `pgsemantic serve` | Start MCP server for Claude Desktop / Cursor |
+| `pgsemantic status` | Show embedding health dashboard |
+| `pgsemantic integrate claude` | Auto-configure Claude Desktop |
 
-Minimally. pgsemantic adds exactly ONE column (`embedding vector(N)`) and ONE trigger to your table. It never modifies, renames, or drops any existing columns, constraints, or indexes.
+### `apply` options
 
-### What if pgvector is not installed?
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--table`, `-t` | required | Table to set up |
+| `--column`, `-c` | required* | Single text column to embed |
+| `--columns` | — | Comma-separated columns to embed together (e.g. `title,description`) |
+| `--model`, `-m` | `local` | `local`, `openai`, or `ollama` |
+| `--external` | off | Store embeddings in a shadow table (don't modify source table) |
+| `--db`, `-d` | `DATABASE_URL` | Database connection string |
+| `--schema`, `-s` | `public` | Postgres schema |
 
-`pgsemantic apply` tries to install it automatically (`CREATE EXTENSION IF NOT EXISTS vector`). If that fails due to permissions, it prints host-specific instructions (Supabase, Neon, RDS, etc.) and exits cleanly.
+*Use `--column` or `--columns`, not both.
 
-### Do I need to download my data?
+### MCP server tools
 
-No. pgsemantic connects directly to your Postgres database (local or remote) and works in place. Your data never leaves your database. Embeddings are generated on your machine and written back to the database.
-
-### Can I use my own embedding model?
-
-Yes. pgsemantic supports three providers out of the box:
-- `local` — sentence-transformers (all-MiniLM-L6-v2, 384d, free)
-- `openai` — text-embedding-3-small (1536d, requires API key)
-- `ollama` — nomic-embed-text (768d, requires Ollama running locally)
-
-### How does the worker keep embeddings in sync?
-
-A Postgres trigger fires on every INSERT, UPDATE, or DELETE on your watched column. It writes a job to `pgvector_setup_queue`. The worker polls this queue, generates the embedding, and writes it back. Uses `SELECT FOR UPDATE SKIP LOCKED` so multiple workers can run safely in parallel.
-
-### Can I use this with multiple tables?
-
-Yes. Run `pgsemantic apply` for each table/column you want to search. The worker processes all watched tables from a single queue.
-
-### What about very large text fields?
-
-all-MiniLM-L6-v2 has a 256-token limit. Longer text is silently truncated. For long documents, consider using OpenAI's text-embedding-3-small (8191 token limit) or splitting text into chunks before embedding.
-
-### Is there a web UI?
-
-No. pgsemantic is a CLI tool + MCP server. The primary interface is the command line and AI agents (Claude Desktop, Cursor) via MCP.
+| Tool | Description |
+|------|-------------|
+| `semantic_search` | Natural-language similarity search |
+| `hybrid_search` | Semantic search + SQL WHERE filters (e.g. `{"category": "laptop", "price_max": 1500}`) |
+| `get_embedding_status` | Coverage %, queue depth, model info |
 
 ---
 
 ## Configuration
 
-### Environment Variables
+### `.env` file
 
-Create a `.env` file in your project root:
+Create in the directory where you run pgsemantic:
 
 ```env
 # Required — your Postgres connection string
 DATABASE_URL=postgresql://user:pass@host:5432/dbname
 
-# Embedding provider: local (default), openai, or ollama
-EMBEDDING_PROVIDER=local
-
-# Required only for openai provider
+# Only needed for OpenAI embeddings
 OPENAI_API_KEY=sk-...
 
-# Ollama settings (only if using ollama provider)
+# Only needed for Ollama embeddings
 OLLAMA_BASE_URL=http://localhost:11434
-
-# MCP transport: stdio (default) or http
-MCP_TRANSPORT=stdio
-MCP_PORT=3000
-
-# Worker settings
-WORKER_BATCH_SIZE=10
-WORKER_POLL_INTERVAL_MS=500
-WORKER_MAX_RETRIES=3
-
-# Logging: debug, info, warn, error
-LOG_LEVEL=info
 ```
 
-### Project Config (`.pgsemantic.json`)
+Most users only need `DATABASE_URL`. Everything else has sensible defaults.
 
-Created automatically by `pgsemantic apply`. Tracks which tables are set up:
+### `.pgsemantic.json`
 
-```json
-{
-  "version": "0.1.0",
-  "tables": [
-    {
-      "table": "products",
-      "schema": "public",
-      "column": "description",
-      "embedding_column": "embedding",
-      "model": "local",
-      "model_name": "all-MiniLM-L6-v2",
-      "dimensions": 384,
-      "hnsw_m": 16,
-      "hnsw_ef_construction": 64,
-      "applied_at": "2026-03-01T10:00:00Z",
-      "primary_key": ["id"]
-    }
-  ]
-}
-```
+Created automatically by `pgsemantic apply`. Tracks which tables are set up and with what settings. Don't delete it — `index`, `worker`, `search`, and `serve` read it. Safe to commit to git.
+
+---
+
+## FAQ
+
+**Does this modify my existing tables?**
+By default, it adds ONE column (`embedding`) and ONE trigger. Nothing else changes. Use `--external` to avoid even that — embeddings go in a separate shadow table.
+
+**What if pgvector is not installed?**
+`apply` tries to install it automatically. If that fails (permissions), it prints host-specific instructions and exits cleanly.
+
+**Do I need to download my data?**
+No. pgsemantic connects to your database (local or remote) and works in place. Embeddings are generated on your machine and written back over the connection.
+
+**Can I search across multiple columns?**
+Yes. Use `--columns title,description` to concatenate multiple columns into one embedding.
+
+**What about very large text fields?**
+all-MiniLM-L6-v2 has a 256-token limit (longer text is truncated). For long documents, use OpenAI's text-embedding-3-small (8191 token limit).
+
+**What is `.pgsemantic.json`?**
+Config file created by `apply`. Tracks your setup. Don't delete it. Safe to commit to git.
 
 ---
 
 ## Development
 
 ```bash
-# Clone and install in dev mode
 git clone https://github.com/yourusername/pgsemantic.git
 cd pgsemantic
 pip install -e ".[dev]"
 
-# Start local Postgres with pgvector
-docker-compose up -d
-
-# Run unit tests (no database needed)
-pytest tests/unit/ -v
-
-# Run integration tests (requires docker-compose up)
-pytest tests/integration/ -m integration -v
-
-# Lint
-ruff check .
-
-# Type check
-mypy pgsemantic/ --strict
+docker-compose up -d                           # local Postgres with pgvector
+pytest tests/unit/ -v                          # unit tests (no DB needed)
+pytest tests/integration/ -m integration -v    # integration tests
+ruff check .                                   # lint
 ```
 
 ---

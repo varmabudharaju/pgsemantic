@@ -26,6 +26,7 @@ from pgsemantic.config import (
 )
 from pgsemantic.db.client import get_connection
 from pgsemantic.db.vectors import (
+    _content_text,
     _pk_last_params,
     bulk_update_embeddings,
     count_embedded,
@@ -89,12 +90,16 @@ def index_command(
     schema = table_config.schema
     model = table_config.model
     pk_columns = table_config.primary_key
+    source_columns = table_config.source_columns
+    storage_mode = table_config.storage_mode
+    shadow_table = table_config.shadow_table
 
+    col_display = ", ".join(source_columns)
     console.print()
     console.print(
-        f"Indexing [cyan]{schema}.{table}.{column}[/cyan] "
+        f"Indexing [cyan]{schema}.{table} ({col_display})[/cyan] "
         f"with [green]{table_config.model_name}[/green] "
-        f"(batch size: {batch_size})"
+        f"(batch size: {batch_size}, storage: {storage_mode})"
     )
     console.print()
 
@@ -106,9 +111,14 @@ def index_command(
         with get_connection(database_url) as conn:
             # Count total and already-embedded rows
             total_with_content = count_total_with_content(
-                conn, table, column, schema
+                conn, table, column, schema,
+                source_columns=source_columns,
             )
-            already_embedded = count_embedded(conn, table, schema)
+            already_embedded = count_embedded(
+                conn, table, schema,
+                storage_mode=storage_mode,
+                shadow_table=shadow_table,
+            )
             remaining = total_with_content - already_embedded
 
             if remaining <= 0:
@@ -153,18 +163,28 @@ def index_command(
                         pk_columns=pk_columns,
                         last_pk_params=last_pk_params,
                         schema=schema,
+                        storage_mode=storage_mode,
+                        shadow_table=shadow_table,
+                        source_columns=source_columns,
                     )
 
                     if not batch:
                         break
 
                     # Extract texts for embedding
-                    texts = [str(row[column]) for row in batch]
+                    if storage_mode == "external":
+                        # External mode: text is pre-concatenated as "content"
+                        texts = [str(row["content"]) for row in batch]
+                    elif len(source_columns) > 1:
+                        # Inline multi-column: concatenate with labels in Python
+                        texts = [_content_text(source_columns, row) for row in batch]
+                    else:
+                        texts = [str(row[column]) for row in batch]
 
                     # Generate embeddings
                     embeddings = provider.embed(texts)
 
-                    # Write embeddings back to database
+                    # Write embeddings back
                     bulk_update_embeddings(
                         conn,
                         table=table,
@@ -172,6 +192,10 @@ def index_command(
                         embeddings=embeddings,
                         pk_columns=pk_columns,
                         schema=schema,
+                        storage_mode=storage_mode,
+                        shadow_table=shadow_table,
+                        source_column="+".join(source_columns),
+                        model_name=table_config.model_name,
                     )
 
                     rows_embedded += len(batch)
@@ -188,7 +212,11 @@ def index_command(
                 f"in {elapsed:.1f}s "
                 f"({rows_per_min:,.0f} rows/min)[/green]"
             )
-            final_embedded = count_embedded(conn, table, schema)
+            final_embedded = count_embedded(
+                conn, table, schema,
+                storage_mode=storage_mode,
+                shadow_table=shadow_table,
+            )
             coverage = (
                 (final_embedded / total_with_content * 100)
                 if total_with_content > 0

@@ -69,6 +69,7 @@ def search_command(
 
     column = table_config.column
     model = table_config.model
+    source_columns = table_config.source_columns
 
     try:
         api_key = settings.openai_api_key if model == "openai" else None
@@ -78,7 +79,12 @@ def search_command(
 
         with get_connection(database_url) as conn:
             results = search_similar(
-                conn, table, column, query_vector, limit=limit
+                conn, table, column, query_vector, limit=limit,
+                schema=table_config.schema,
+                storage_mode=table_config.storage_mode,
+                shadow_table=table_config.shadow_table,
+                source_columns=source_columns,
+                pk_columns=table_config.primary_key,
             )
 
         if not results:

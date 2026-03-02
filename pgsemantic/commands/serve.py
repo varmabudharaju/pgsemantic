@@ -48,7 +48,21 @@ def serve_command(
         raise typer.Exit(code=1)
 
     # Import here to avoid loading mcp at CLI parse time
-    from pgsemantic.mcp_server.server import mcp  # noqa: E402
+    from pgsemantic.mcp_server.server import mcp, _get_or_create_provider  # noqa: E402
+
+    # Pre-warm: load the embedding model at startup so the first tool call
+    # doesn't hang for seconds while Claude Desktop waits.
+    from pgsemantic.config import load_project_config as _load_cfg  # noqa: E402
+
+    _cfg = _load_cfg()
+    if _cfg and _cfg.tables:
+        _tc = _cfg.tables[0]
+        _model = _tc.model
+        _api_key = settings.openai_api_key if _model == "openai" else None
+        _ollama_url = settings.ollama_base_url if _model == "ollama" else None
+        print(f"Pre-loading embedding model ({_tc.model_name})...", file=sys.stderr)
+        _get_or_create_provider(_model, api_key=_api_key, ollama_base_url=_ollama_url)
+        print("Model ready.", file=sys.stderr)
 
     if effective_transport == "stdio":
         print("Starting MCP server (transport: stdio)", file=sys.stderr)

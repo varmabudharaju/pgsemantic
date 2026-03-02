@@ -54,6 +54,7 @@ def status_command(
     table.add_column("Table", style="cyan", no_wrap=True)
     table.add_column("Column", style="white")
     table.add_column("Model", style="white")
+    table.add_column("Storage", style="white")
     table.add_column("Coverage", justify="right")
     table.add_column("Pending", justify="right")
     table.add_column("Failed", justify="right")
@@ -63,9 +64,14 @@ def status_command(
         with get_connection(db_url) as conn:
             for tc in config.tables:
                 try:
-                    embedded = count_embedded(conn, tc.table, schema=tc.schema)
+                    embedded = count_embedded(
+                        conn, tc.table, schema=tc.schema,
+                        storage_mode=tc.storage_mode,
+                        shadow_table=tc.shadow_table,
+                    )
                     total = count_total_with_content(
-                        conn, tc.table, tc.column, schema=tc.schema
+                        conn, tc.table, tc.column, schema=tc.schema,
+                        source_columns=tc.source_columns,
                     )
                     pending = count_pending(conn, tc.table)
                     failed = count_failed(conn, tc.table)
@@ -73,8 +79,9 @@ def status_command(
                     # Table may have been dropped — show as missing
                     table.add_row(
                         tc.table,
-                        tc.column,
+                        ", ".join(tc.source_columns),
                         tc.model_name,
+                        tc.storage_mode,
                         "[red]TABLE MISSING[/red]",
                         "—",
                         "—",
@@ -104,8 +111,9 @@ def status_command(
 
                 table.add_row(
                     tc.table,
-                    tc.column,
+                    ", ".join(tc.source_columns),
                     tc.model_name,
+                    tc.storage_mode,
                     coverage_str,
                     pending_str,
                     failed_str,
