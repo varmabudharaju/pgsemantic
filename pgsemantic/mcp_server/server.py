@@ -30,13 +30,34 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP(name="pgsemantic")
 
+# Cached provider — avoids reloading the embedding model on every tool call.
+_provider_cache: dict[str, object] = {}
+
+
+def _get_or_create_provider(
+    model: str,
+    api_key: str | None = None,
+    ollama_base_url: str | None = None,
+) -> object:
+    """Return a cached embedding provider, creating it on first use."""
+    cache_key = f"{model}:{api_key or ''}:{ollama_base_url or ''}"
+    if cache_key not in _provider_cache:
+        _provider_cache[cache_key] = get_provider(
+            model, api_key=api_key, ollama_base_url=ollama_base_url
+        )
+        logger.info("Loaded embedding provider: %s", model)
+    return _provider_cache[cache_key]
+
+
+from pgsemantic.config import TableConfig
+
 
 def _get_table_config(
     table: str,
-) -> tuple[str, str, str, str, str | None, str]:
+) -> tuple[str, TableConfig, str | None, str]:
     """Load settings/config and return provider info for a table.
 
-    Returns (database_url, column, model, model_name, openai_api_key, ollama_base_url).
+    Returns (database_url, table_config, openai_api_key, ollama_base_url).
     Loads settings once so callers don't need a redundant load_settings() call.
     Raises ToolError if settings or table config is missing.
     """
@@ -65,9 +86,7 @@ def _get_table_config(
 
     return (
         settings.database_url,
-        table_config.column,
-        table_config.model,
-        table_config.model_name,
+        table_config,
         settings.openai_api_key,
         settings.ollama_base_url,
     )
@@ -89,19 +108,24 @@ def semantic_search(
     Returns:
         List of matching rows with id, content, and similarity score.
     """
-    database_url, column, model, _model_name, api_key, ollama_url = _get_table_config(table)
+    database_url, tc, api_key, ollama_url = _get_table_config(table)
 
     try:
-        provider = get_provider(model, api_key=api_key, ollama_base_url=ollama_url)
+        provider = _get_or_create_provider(tc.model, api_key=api_key, ollama_base_url=ollama_url)
         query_vector = provider.embed_query(query)
 
         with get_connection(database_url) as conn:
             results = search_similar(
                 conn=conn,
                 table=table,
-                column=column,
+                column=tc.column,
                 query_vector=query_vector,
                 limit=limit,
+                schema=tc.schema,
+                storage_mode=tc.storage_mode,
+                shadow_table=tc.shadow_table,
+                source_columns=tc.source_columns,
+                pk_columns=tc.primary_key,
             )
 
         # Strip the raw embedding vector — it's huge and useless for the AI
@@ -146,11 +170,11 @@ def hybrid_search(
     Returns:
         List of matching rows with id, content, and similarity score.
     """
-    database_url, column, model, _model_name, api_key, ollama_url = _get_table_config(table)
+    database_url, tc, api_key, ollama_url = _get_table_config(table)
     effective_filters: dict[str, object] = filters if filters is not None else {}
 
     try:
-        provider = get_provider(model, api_key=api_key, ollama_base_url=ollama_url)
+        provider = _get_or_create_provider(tc.model, api_key=api_key, ollama_base_url=ollama_url)
         query_vector = provider.embed_query(query)
 
         with get_connection(database_url) as conn:
@@ -158,11 +182,16 @@ def hybrid_search(
             results = db_hybrid_search(
                 conn=conn,
                 table=table,
-                column=column,
+                column=tc.column,
                 query_vector=query_vector,
                 filters=effective_filters,
                 limit=limit,
                 pgvector_version=pgvector_version,
+                schema=tc.schema,
+                storage_mode=tc.storage_mode,
+                shadow_table=tc.shadow_table,
+                source_columns=tc.source_columns,
+                pk_columns=tc.primary_key,
             )
 
         clean_results = [
@@ -197,20 +226,18 @@ def get_embedding_status(table: str) -> dict[str, object]:
         Dict with table, total_rows, embedded_rows, coverage_pct,
         pending_queue, failed_queue, model, and applied_at.
     """
-    database_url, column, _model, model_name, _api_key, _ollama_url = _get_table_config(table)
+    database_url, tc, _api_key, _ollama_url = _get_table_config(table)
 
     try:
-        config = load_project_config()
-        if config is None:
-            raise ToolError("Internal error: config became unavailable.")
-        table_config = config.get_table_config(table)
-        if table_config is None:
-            raise ToolError(f"Internal error: table '{table}' config became unavailable.")
-
         with get_connection(database_url) as conn:
-            embedded = count_embedded(conn, table, schema=table_config.schema)
+            embedded = count_embedded(
+                conn, table, schema=tc.schema,
+                storage_mode=tc.storage_mode,
+                shadow_table=tc.shadow_table,
+            )
             total = count_total_with_content(
-                conn, table, column, schema=table_config.schema
+                conn, table, tc.column, schema=tc.schema,
+                source_columns=tc.source_columns,
             )
             pending = count_pending(conn, table)
             failed = count_failed(conn, table)
@@ -224,8 +251,9 @@ def get_embedding_status(table: str) -> dict[str, object]:
             "coverage_pct": coverage_pct,
             "pending_queue": pending,
             "failed_queue": failed,
-            "model": model_name,
-            "applied_at": table_config.applied_at,
+            "model": tc.model_name,
+            "storage_mode": tc.storage_mode,
+            "applied_at": tc.applied_at,
         }
 
         logger.info("get_embedding_status: table=%s coverage=%.1f%%", table, coverage_pct)

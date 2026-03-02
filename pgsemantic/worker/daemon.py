@@ -156,12 +156,16 @@ def _process_job(
         return
 
     pk_columns = table_config.primary_key
+    source_columns = table_config.source_columns
+    storage_mode = table_config.storage_mode
+    shadow_table = table_config.shadow_table
 
     try:
         if operation == "DELETE":
             null_embedding(
                 conn, table_name, row_id,
                 pk_columns=pk_columns, schema=table_config.schema,
+                storage_mode=storage_mode, shadow_table=shadow_table,
             )
             complete_job(conn, job_id=job_id)
             logger.info(
@@ -176,6 +180,7 @@ def _process_job(
                 row_id,
                 pk_columns=pk_columns,
                 schema=table_config.schema,
+                source_columns=source_columns,
             )
             if text is None:
                 # Row was deleted before we could process it
@@ -186,7 +191,7 @@ def _process_job(
             # Generate embedding
             embedding: list[float] = provider.embed_query(text)
 
-            # Write embedding back to source table
+            # Write embedding back
             update_embedding(
                 conn,
                 table_name,
@@ -194,6 +199,10 @@ def _process_job(
                 embedding,
                 pk_columns=pk_columns,
                 schema=table_config.schema,
+                storage_mode=storage_mode,
+                shadow_table=shadow_table,
+                source_column="+".join(source_columns),
+                model_name=table_config.model_name,
             )
             conn.commit()
             complete_job(conn, job_id=job_id)

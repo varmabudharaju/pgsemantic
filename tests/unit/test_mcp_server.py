@@ -97,11 +97,13 @@ class TestGetTableConfig:
         from pgsemantic.mcp_server.server import _get_table_config
 
         result = _get_table_config("products")
-        db_url, column, model, model_name, api_key, ollama_url = result
+        db_url, tc, api_key, ollama_url = result
         assert db_url == "postgresql://test:test@localhost/testdb"
-        assert column == "description"
-        assert model == "local"
-        assert model_name == DEFAULT_LOCAL_MODEL
+        assert tc.column == "description"
+        assert tc.model == "local"
+        assert tc.model_name == DEFAULT_LOCAL_MODEL
+        assert tc.storage_mode == "inline"
+        assert tc.source_columns == ["description"]
 
     @patch("pgsemantic.mcp_server.server.load_project_config")
     @patch("pgsemantic.mcp_server.server.load_settings")

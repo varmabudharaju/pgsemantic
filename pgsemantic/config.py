@@ -45,6 +45,9 @@ WORKER_HEARTBEAT_INTERVAL_S: int = 60
 # ── Queue table name — never change after initial release ─────────────────
 QUEUE_TABLE_NAME: str = "pgvector_setup_queue"
 
+# ── Shadow table prefix for external storage mode ─────────────────────────
+SHADOW_TABLE_PREFIX: str = "pgsemantic_embeddings_"
+
 # ── Config file name ─────────────────────────────────────────────────────
 CONFIG_FILE_NAME: str = ".pgsemantic.json"
 
@@ -105,6 +108,14 @@ class TableConfig:
     hnsw_ef_construction: int
     applied_at: str
     primary_key: list[str] = field(default_factory=lambda: ["id"])
+    columns: list[str] | None = None
+    storage_mode: str = "inline"
+    shadow_table: str | None = None
+
+    @property
+    def source_columns(self) -> list[str]:
+        """Return the list of columns to embed (multi-column or single)."""
+        return self.columns if self.columns else [self.column]
 
 
 @dataclass
