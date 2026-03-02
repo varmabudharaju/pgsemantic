@@ -563,7 +563,7 @@ Config file created by `apply`. Tracks your setup. Don't delete it. Safe to comm
 ## Development
 
 ```bash
-git clone https://github.com/yourusername/pgsemantic.git
+git clone https://github.com/varmabudharaju/pgsemantic.git
 cd pgsemantic
 pip install -e ".[dev]"
 
