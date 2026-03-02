@@ -55,7 +55,11 @@ def integrate_command(
     settings = load_settings()
     database_url = settings.database_url or "<your-database-url>"
 
-    # Build the MCP server entry
+    # Build the MCP server entry.
+    # PGSEMANTIC_PROJECT_DIR tells the MCP server where to find
+    # .pgsemantic.json and .env when Claude Desktop starts it from
+    # an arbitrary working directory.
+    project_dir = str(Path.cwd())
     pgsemantic_bin = shutil.which("pgsemantic")
     if pgsemantic_bin:
         server_entry = {
@@ -63,6 +67,7 @@ def integrate_command(
             "args": ["serve"],
             "env": {
                 "DATABASE_URL": database_url,
+                "PGSEMANTIC_PROJECT_DIR": project_dir,
             },
         }
     else:
@@ -71,6 +76,7 @@ def integrate_command(
             "args": ["-m", "pgsemantic", "serve"],
             "env": {
                 "DATABASE_URL": database_url,
+                "PGSEMANTIC_PROJECT_DIR": project_dir,
             },
         }
 

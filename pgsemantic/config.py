@@ -66,8 +66,16 @@ class Settings:
 
 
 def load_settings() -> Settings:
-    """Load settings from .env file and environment variables."""
-    load_dotenv()
+    """Load settings from .env file and environment variables.
+
+    If ``PGSEMANTIC_PROJECT_DIR`` is set, loads ``.env`` from that directory
+    so the MCP server picks up the right DATABASE_URL when started by
+    Claude Desktop from an arbitrary working directory.
+    """
+    project_dir = os.environ.get("PGSEMANTIC_PROJECT_DIR")
+    if project_dir:
+        load_dotenv(Path(project_dir) / ".env")
+    load_dotenv()  # also load from cwd (no-op if already loaded)
     return Settings(
         database_url=os.environ.get("DATABASE_URL"),
         embedding_provider=os.environ.get("EMBEDDING_PROVIDER", "local"),
@@ -125,9 +133,19 @@ def save_project_config(config: ProjectConfig, path: Path | None = None) -> None
 
 
 def load_project_config(path: Path | None = None) -> ProjectConfig | None:
-    """Read project config from .pgsemantic.json. Returns None if file doesn't exist."""
+    """Read project config from .pgsemantic.json. Returns None if file doesn't exist.
+
+    Search order:
+    1. Explicit ``path`` argument
+    2. ``PGSEMANTIC_PROJECT_DIR`` env var (set automatically by ``pgsemantic integrate``)
+    3. Current working directory
+    """
     if path is None:
-        path = Path.cwd() / CONFIG_FILE_NAME
+        project_dir = os.environ.get("PGSEMANTIC_PROJECT_DIR")
+        if project_dir:
+            path = Path(project_dir) / CONFIG_FILE_NAME
+        else:
+            path = Path.cwd() / CONFIG_FILE_NAME
     if not path.exists():
         return None
     try:
