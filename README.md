@@ -32,6 +32,7 @@ $ pgsemantic --help
 │ serve      Start the pgsemantic MCP server                                  │
 │ status     Show embedding health dashboard for all watched tables           │
 │ integrate  Set up AI agent integrations (Claude Desktop)                    │
+│ ui         Launch the web dashboard                                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
@@ -253,6 +254,39 @@ pgsemantic integrate claude
 
 Claude calls `semantic_search` or `hybrid_search` behind the scenes and gets ranked results from your actual database.
 
+### Step 9: Web UI (optional)
+
+Prefer a visual interface? Launch the built-in web dashboard:
+
+```bash
+$ pgsemantic ui
+
+pgsemantic UI starting at http://127.0.0.1:8080
+Press Ctrl+C to stop.
+```
+
+Open `http://localhost:8080` in your browser. The UI gives you:
+
+- **Dashboard** — overview of configured tables, embedding stats, and a step-by-step setup wizard
+- **Search** — live semantic search with results as you type (300ms debounce)
+- **Table Browser** — explore all database tables, view columns/types, and preview sample data
+- **Inspect** — scan and score columns visually, one-click apply
+- **Index** — bulk embed with progress, re-index from scratch
+- **Status** — real-time embedding coverage with auto-refresh
+- **Connection** — test and save database URLs from the browser
+- **MCP** — configure Claude Desktop integration, view config snippets
+- **Worker** — start/stop the background worker from the UI
+- **Command palette** — press `Cmd+K` (or `Ctrl+K`) for quick navigation
+
+```bash
+# Options
+pgsemantic ui --port 3000        # custom port
+pgsemantic ui --host 0.0.0.0     # allow network access
+pgsemantic ui --reload           # auto-reload for development
+```
+
+The UI also runs an embedded MCP SSE server at `/mcp/sse`, so AI agents can connect while the dashboard is running.
+
 ---
 
 ## Multi-Column Search (`--columns`)
@@ -456,15 +490,19 @@ When pgvector isn't installed, `pgsemantic apply` tries to install it automatica
 │  Polls queue every 500ms    │     │                       │
 │  Fetches source text        │     │  semantic_search()    │
 │  Generates embedding        │     │  hybrid_search()      │
-│  Writes back to table       │     │  get_embedding_status │
-│  Deletes completed job      │     │       │               │
-└─────────────────────────────┘     └───────┼───────────────┘
-                                            │
-                                            ▼
-                                    ┌───────────────┐
-                                    │ Claude Desktop │
-                                    │ Cursor / AI    │
-                                    └───────────────┘
+│  Writes back to table       │     │  list_tables()        │
+│  Deletes completed job      │     │  get_sample_rows()    │
+└─────────────────────────────┘     │  inspect_columns()    │
+                                    │  + 2 more tools       │
+┌─────────────────────────────┐     └───────┼───────────────┘
+│   pgsemantic ui             │             │
+│   (Web Dashboard)           │             ▼
+│                             │     ┌───────────────┐
+│  Search, Inspect, Browse    │     │ Claude Desktop │
+│  Apply, Index, Status       │     │ Cursor / AI    │
+│  Embedded MCP SSE server    │     └───────────────┘
+│  Worker control             │
+└─────────────────────────────┘
 ```
 
 **Key design decisions:**
@@ -488,6 +526,7 @@ When pgvector isn't installed, `pgsemantic apply` tries to install it automatica
 | `pgsemantic serve` | Start MCP server for Claude Desktop / Cursor |
 | `pgsemantic status` | Show embedding health dashboard |
 | `pgsemantic integrate claude` | Auto-configure Claude Desktop |
+| `pgsemantic ui` | Launch the web dashboard (default: http://localhost:8080) |
 
 ### `apply` options
 
@@ -503,6 +542,14 @@ When pgvector isn't installed, `pgsemantic apply` tries to install it automatica
 
 *Use `--column` or `--columns`, not both.
 
+### `ui` options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--host`, `-h` | `127.0.0.1` | Host to bind to. Use `0.0.0.0` for network access |
+| `--port`, `-p` | `8080` | Port to bind to |
+| `--reload` | off | Enable auto-reload for development |
+
 ### MCP server tools
 
 | Tool | Description |
@@ -510,6 +557,10 @@ When pgvector isn't installed, `pgsemantic apply` tries to install it automatica
 | `semantic_search` | Natural-language similarity search |
 | `hybrid_search` | Semantic search + SQL WHERE filters (e.g. `{"category": "laptop", "price_max": 1500}`) |
 | `get_embedding_status` | Coverage %, queue depth, model info |
+| `list_tables` | List all database tables with columns, types, and row counts |
+| `get_sample_rows` | Preview sample rows from any table |
+| `inspect_columns` | Score text columns for semantic search suitability |
+| `list_configured_tables` | List tables with semantic search already set up |
 
 ---
 
