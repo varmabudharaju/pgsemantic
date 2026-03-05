@@ -22,3 +22,5 @@ Thumbs.db
 plan.md
 CLAUDE.md
 docs/plans/
+test_insert*.py
+*.json.bak

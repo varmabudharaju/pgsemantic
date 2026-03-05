@@ -14,8 +14,14 @@ from mcp.server.fastmcp.exceptions import ToolError
 
 from pgsemantic.config import load_project_config, load_settings
 from pgsemantic.db.client import get_connection, get_pgvector_version
+from pgsemantic.db.introspect import (
+    get_row_count_estimate,
+    get_user_tables,
+    inspect_database,
+)
 from pgsemantic.db.queue import count_failed, count_pending
 from pgsemantic.db.vectors import (
+    _qualified_table,
     count_embedded,
     count_total_with_content,
     search_similar,
@@ -50,6 +56,17 @@ def _get_or_create_provider(
 
 
 from pgsemantic.config import TableConfig
+
+
+def _get_db_url() -> str:
+    """Load settings and return the database URL. Raises ToolError if not set."""
+    settings = load_settings()
+    if not settings.database_url:
+        raise ToolError(
+            "DATABASE_URL not set. "
+            "Set it in your .env file or as an environment variable."
+        )
+    return settings.database_url
 
 
 def _get_table_config(
@@ -264,3 +281,170 @@ def get_embedding_status(table: str) -> dict[str, object]:
     except Exception as e:
         logger.exception("Unexpected error in get_embedding_status")
         raise ToolError(f"Status check failed: {e}") from e
+
+
+@mcp.tool()
+def list_tables() -> list[dict[str, object]]:
+    """List all database tables with their columns, types, and row counts.
+
+    Use this to discover what data exists before searching.
+
+    Returns:
+        List of tables, each with name, schema, columns (name/type/nullable), and row_count.
+    """
+    db_url = _get_db_url()
+
+    try:
+        with get_connection(db_url, register_vector_type=False) as conn:
+            tables = get_user_tables(conn)
+            result = []
+            for t in tables:
+                tname = t["table_name"]
+                tschema = t["table_schema"]
+                if tname == "pgvector_setup_queue":
+                    continue
+
+                cols_result = conn.execute(
+                    "SELECT column_name, data_type, is_nullable "
+                    "FROM information_schema.columns "
+                    "WHERE table_name = %(tname)s AND table_schema = %(tschema)s "
+                    "ORDER BY ordinal_position",
+                    {"tname": tname, "tschema": tschema},
+                ).fetchall()
+
+                columns = [
+                    {
+                        "name": str(r["column_name"]),
+                        "type": str(r["data_type"]),
+                        "nullable": str(r["is_nullable"]) == "YES",
+                    }
+                    for r in cols_result
+                ]
+
+                row_count = get_row_count_estimate(conn, tname)
+                result.append({
+                    "name": tname,
+                    "schema": tschema,
+                    "columns": columns,
+                    "row_count": row_count,
+                })
+
+        logger.info("list_tables: found %d tables", len(result))
+        return result
+
+    except Exception as e:
+        logger.exception("Unexpected error in list_tables")
+        raise ToolError(f"Failed to list tables: {e}") from e
+
+
+@mcp.tool()
+def get_sample_rows(
+    table: str,
+    limit: int = 5,
+    schema: str = "public",
+) -> list[dict[str, object]]:
+    """Get sample rows from a database table to understand its data.
+
+    Args:
+        table: The table name to sample from.
+        limit: Number of rows to return (max 10, default 5).
+        schema: The schema name (default "public").
+
+    Returns:
+        List of row dicts with values truncated at 200 chars. Vectors shown as "[vector]".
+    """
+    db_url = _get_db_url()
+    if limit > 10:
+        limit = 10
+
+    try:
+        with get_connection(db_url, register_vector_type=False) as conn:
+            qualified = _qualified_table(table, schema)
+            rows = conn.execute(
+                f"SELECT * FROM {qualified} LIMIT %(limit)s",
+                {"limit": limit},
+            ).fetchall()
+
+            cleaned = []
+            for row in rows:
+                item: dict[str, object] = {}
+                for key, val in dict(row).items():
+                    if key == "embedding":
+                        item[key] = "[vector]"
+                    else:
+                        s = str(val) if val is not None else None
+                        if s and len(s) > 200:
+                            s = s[:200] + "..."
+                        item[key] = s
+                cleaned.append(item)
+
+        logger.info("get_sample_rows: table=%s rows=%d", table, len(cleaned))
+        return cleaned
+
+    except Exception as e:
+        logger.exception("Unexpected error in get_sample_rows")
+        raise ToolError(f"Failed to sample rows: {e}") from e
+
+
+@mcp.tool()
+def inspect_columns() -> list[dict[str, object]]:
+    """Scan the database and score text columns for semantic search suitability.
+
+    Analyzes all user tables, finds text/varchar/jsonb columns, and scores them
+    based on average text length and column name heuristics. Higher scores mean
+    better candidates for semantic search.
+
+    Returns:
+        List of column candidates with table, column, data_type, avg_length, score, and stars.
+    """
+    db_url = _get_db_url()
+
+    try:
+        with get_connection(db_url, register_vector_type=False) as conn:
+            candidates = inspect_database(conn)
+
+        result = [
+            {
+                "table": c.table,
+                "schema": c.schema,
+                "column": c.column,
+                "data_type": c.data_type,
+                "avg_length": round(c.avg_length, 1),
+                "score": c.score,
+                "stars": c.stars,
+                "row_count": c.row_count,
+            }
+            for c in candidates
+        ]
+
+        logger.info("inspect_columns: found %d candidates", len(result))
+        return result
+
+    except Exception as e:
+        logger.exception("Unexpected error in inspect_columns")
+        raise ToolError(f"Inspection failed: {e}") from e
+
+
+@mcp.tool()
+def list_configured_tables() -> list[dict[str, object]]:
+    """List tables that have semantic search configured via pgsemantic.
+
+    Returns:
+        List of configured tables with name, column(s), model, storage_mode, and applied_at.
+        Returns empty list if no config exists.
+    """
+    config = load_project_config()
+    if config is None:
+        return []
+
+    return [
+        {
+            "table": tc.table,
+            "schema": tc.schema,
+            "columns": tc.source_columns or [tc.column],
+            "model": tc.model_name,
+            "storage_mode": tc.storage_mode,
+            "applied_at": tc.applied_at,
+        }
+        for tc in config.tables
+    ]

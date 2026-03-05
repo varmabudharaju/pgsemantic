@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pgsemantic</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            --mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+            --bg-0: #fafafa; --bg-1: #ffffff; --bg-2: #f4f4f5; --bg-3: #e4e4e7;
+            --bg-sidebar: #fafafa; --bg-input: #ffffff; --bg-code: #f4f4f5;
+            --fg-0: #09090b; --fg-1: #18181b; --fg-2: #3f3f46; --fg-3: #71717a; --fg-4: #a1a1aa; --fg-5: #d4d4d8;
+            --accent: #6366f1; --accent-hover: #4f46e5; --accent-fg: #ffffff;
+            --accent-light: #eef2ff; --accent-subtle: rgba(99,102,241,0.08);
+            --blue: #2563eb; --blue-light: #eff6ff; --blue-fg: #1e40af;
+            --green: #16a34a; --green-light: #f0fdf4; --green-fg: #15803d;
+            --amber: #d97706; --amber-light: #fffbeb; --amber-fg: #b45309;
+            --red: #dc2626; --red-light: #fef2f2; --red-fg: #b91c1c;
+            --border: #e4e4e7; --border-hover: #d4d4d8;
+            --ring: rgba(99,102,241,0.15);
+            --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+            --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -4px rgba(0,0,0,0.04);
+            --shadow-xl: 0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.05);
+            --radius: 6px; --radius-md: 8px; --radius-lg: 12px;
+            --transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        [data-theme="dark"] {
+            --bg-0: #09090b; --bg-1: #18181b; --bg-2: #27272a; --bg-3: #3f3f46;
+            --bg-sidebar: #0f0f12; --bg-input: #18181b; --bg-code: #1c1c1f;
+            --fg-0: #fafafa; --fg-1: #f4f4f5; --fg-2: #d4d4d8; --fg-3: #a1a1aa; --fg-4: #71717a; --fg-5: #3f3f46;
+            --accent: #818cf8; --accent-hover: #a5b4fc; --accent-fg: #0f0f12;
+            --accent-light: rgba(129,140,248,0.1); --accent-subtle: rgba(129,140,248,0.06);
+            --blue: #3b82f6; --blue-light: rgba(59,130,246,0.1); --blue-fg: #60a5fa;
+            --green: #22c55e; --green-light: rgba(34,197,94,0.1); --green-fg: #4ade80;
+            --amber: #f59e0b; --amber-light: rgba(245,158,11,0.1); --amber-fg: #fbbf24;
+            --red: #ef4444; --red-light: rgba(239,68,68,0.1); --red-fg: #f87171;
+            --border: #27272a; --border-hover: #3f3f46;
+            --ring: rgba(129,140,248,0.12);
+            --shadow-xs: 0 1px 2px rgba(0,0,0,0.3); --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.4); --shadow-lg: 0 10px 15px rgba(0,0,0,0.5);
+            --shadow-xl: 0 20px 25px rgba(0,0,0,0.6);
+        }
+
+        html, body { height: 100%; font-family: var(--font); background: var(--bg-0); color: var(--fg-2); font-size: 14px; line-height: 1.6; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+        /* Layout */
+        .shell { display: flex; height: 100vh; }
+        .sidebar { width: 240px; background: var(--bg-sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto; }
+        .content { flex: 1; overflow-y: auto; }
+        .container { max-width: 960px; margin: 0 auto; padding: 32px 40px; }
+
+        /* Sidebar */
+        .sb-brand { padding: 20px 20px 16px; display: flex; align-items: center; justify-content: space-between; }
+        .sb-brand-name { display: flex; align-items: center; gap: 10px; }
+        .sb-brand-name svg { width: 22px; height: 22px; color: var(--accent); }
+        .sb-brand h1 { font-size: 15px; font-weight: 700; color: var(--fg-0); letter-spacing: -0.02em; }
+        .sb-brand span { font-size: 11px; color: var(--fg-4); font-weight: 500; margin-left: 8px; background: var(--bg-2); padding: 1px 6px; border-radius: 4px; }
+        .theme-btn { background: none; border: 1px solid var(--border); border-radius: var(--radius); width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--fg-3); transition: all var(--transition); }
+        .theme-btn:hover { background: var(--bg-2); color: var(--fg-1); border-color: var(--border-hover); }
+        .theme-btn svg { width: 14px; height: 14px; }
+        .sb-section { padding: 4px 12px; }
+        .sb-label { font-size: 11px; font-weight: 600; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.06em; padding: 16px 8px 6px; }
+        .sb-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--radius); cursor: pointer; color: var(--fg-3); font-size: 13px; font-weight: 500; transition: all var(--transition); border: none; background: none; width: 100%; text-align: left; }
+        .sb-item:hover { background: var(--accent-subtle); color: var(--fg-1); }
+        .sb-item.active { background: var(--accent); color: var(--accent-fg); }
+        .sb-item svg { width: 16px; height: 16px; flex-shrink: 0; opacity: 0.5; }
+        .sb-item.active svg { opacity: 1; }
+        .sb-divider { height: 1px; background: var(--border); margin: 8px 20px; }
+        .sb-footer { margin-top: auto; padding: 12px; border-top: 1px solid var(--border); }
+        .sb-conn { padding: 8px 12px; font-size: 12px; color: var(--fg-4); display: flex; align-items: center; gap: 8px; }
+        .sb-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        .sb-dot-ok { background: var(--green); }
+        .sb-dot-err { background: var(--red); }
+        .sb-debug { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: var(--radius); cursor: pointer; color: var(--fg-4); font-size: 12px; font-weight: 500; border: none; background: none; width: 100%; transition: all var(--transition); }
+        .sb-debug:hover { background: var(--bg-2); color: var(--fg-3); }
+        .sb-debug svg { width: 14px; height: 14px; }
+        .sb-badge { background: var(--red-light); color: var(--red); font-size: 10px; font-weight: 600; padding: 0 5px; border-radius: 99px; min-width: 16px; text-align: center; margin-left: auto; }
+
+        /* Page header */
+        .pg-header { margin-bottom: 24px; }
+        .pg-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+        .pg-title { font-size: 22px; font-weight: 700; color: var(--fg-0); letter-spacing: -0.03em; line-height: 1.2; background: linear-gradient(135deg, var(--fg-0), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .pg-desc { color: var(--fg-3); font-size: 14px; margin-top: 4px; }
+        .pg-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+        /* Help box */
+        .help-box { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 24px; color: var(--fg-3); font-size: 13px; line-height: 1.7; }
+        .help-box strong { color: var(--fg-1); font-weight: 600; }
+        .help-box ul { margin: 4px 0 0 18px; }
+        .help-box li { margin-bottom: 2px; }
+        .help-box code { font-family: var(--mono); font-size: 12px; background: var(--bg-1); border: 1px solid var(--border); padding: 1px 5px; border-radius: 3px; }
+
+        /* Cards */
+        .card { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 16px; overflow: hidden; }
+        .card-body { padding: 20px 24px; }
+        .card-head { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+        .card-head h3 { font-size: 14px; font-weight: 600; color: var(--fg-1); }
+        .card-foot { padding: 12px 24px; border-top: 1px solid var(--border); background: var(--bg-0); display: flex; align-items: center; gap: 8px; }
+
+        /* Tables */
+        .tbl { width: 100%; border-collapse: collapse; }
+        .tbl th { text-align: left; padding: 10px 16px; font-size: 12px; font-weight: 600; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.04em; background: var(--bg-0); border-bottom: 1px solid var(--border); }
+        .tbl td { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--fg-2); }
+        .tbl tbody tr:last-child td { border-bottom: none; }
+        .tbl tr.clickable { cursor: pointer; transition: background var(--transition); }
+        .tbl tr.clickable:hover td { background: var(--accent-subtle); }
+        .tbl-name { font-weight: 600; color: var(--fg-0); }
+        .tbl-mono { font-family: var(--mono); font-size: 12px; color: var(--fg-3); }
+
+        /* Buttons */
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; border-radius: var(--radius); font-size: 13px; font-weight: 500; font-family: var(--font); cursor: pointer; border: 1px solid transparent; transition: all var(--transition); white-space: nowrap; line-height: 1; }
+        .btn-sm { padding: 5px 10px; font-size: 12px; }
+        .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-secondary { background: var(--bg-1); color: var(--fg-1); border-color: var(--border); }
+        .btn-secondary:hover { background: var(--bg-2); border-color: var(--border-hover); }
+        .btn-ghost { background: transparent; color: var(--fg-3); border-color: transparent; }
+        .btn-ghost:hover { background: var(--bg-2); color: var(--fg-1); }
+        .btn-danger { background: var(--red-light); color: var(--red-fg); border-color: transparent; }
+        .btn-danger:hover { background: var(--red); color: white; }
+        .btn-success { background: var(--green-light); color: var(--green-fg); border-color: transparent; }
+        .btn-success:hover { background: var(--green); color: white; }
+
+        /* Forms */
+        .field { margin-bottom: 16px; }
+        .label { display: block; font-size: 13px; font-weight: 500; color: var(--fg-1); margin-bottom: 6px; }
+        .input, .select { width: 100%; padding: 8px 12px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); color: var(--fg-1); font-size: 14px; font-family: var(--font); outline: none; transition: all var(--transition); }
+        .input:focus, .select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+        .input::placeholder { color: var(--fg-4); }
+        .input-lg { padding: 10px 14px; font-size: 15px; }
+        .select { appearance: none; background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23a1a1aa' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e"); background-position: right 8px center; background-repeat: no-repeat; background-size: 1.25em; padding-right: 2rem; }
+        .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .field-hint { font-size: 12px; color: var(--fg-4); margin-top: 4px; }
+        .check-label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: var(--fg-2); }
+        .check-label input { accent-color: var(--fg-0); width: 15px; height: 15px; }
+
+        /* Badges */
+        .pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 99px; font-size: 12px; font-weight: 500; }
+        .pill-default { background: var(--bg-2); color: var(--fg-3); }
+        .pill-green { background: var(--green-light); color: var(--green-fg); }
+        .pill-amber { background: var(--amber-light); color: var(--amber-fg); }
+        .pill-red { background: var(--red-light); color: var(--red-fg); }
+        .pill-blue { background: var(--blue-light); color: var(--blue-fg); }
+
+        /* Stats */
+        .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+        .metric { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px; border-left: 3px solid var(--accent); }
+        .metric-value { font-size: 28px; font-weight: 700; color: var(--fg-0); letter-spacing: -0.03em; line-height: 1; }
+        .metric-label { font-size: 12px; font-weight: 500; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 6px; }
+
+        /* Search results */
+        .result { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 16px 20px; margin-bottom: 8px; background: var(--bg-1); transition: all var(--transition); cursor: pointer; }
+        .result:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); }
+        .result-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+        .result-rank { font-size: 13px; font-weight: 600; font-family: var(--mono); }
+        .result-meta { font-size: 12px; color: var(--fg-4); }
+        .result-body { color: var(--fg-3); margin-top: 6px; font-size: 13px; line-height: 1.6; }
+        .score-high { color: var(--green); } .score-mid { color: var(--amber); } .score-low { color: var(--fg-4); }
+
+        /* Progress */
+        .progress { width: 100%; height: 4px; background: var(--bg-3); border-radius: 99px; overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--accent); border-radius: 99px; transition: width 0.4s ease; }
+
+        /* Code block */
+        .code-block { background: var(--bg-code); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; font-family: var(--mono); font-size: 12px; color: var(--fg-2); overflow-x: auto; white-space: pre-wrap; line-height: 1.6; }
+        .code-block.clickable { cursor: pointer; transition: border-color var(--transition); }
+        .code-block.clickable:hover { border-color: var(--border-hover); }
+
+        /* Modal */
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.15s ease; }
+        [data-theme="dark"] .overlay { background: rgba(0,0,0,0.7); }
+        .dialog { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; max-width: 520px; width: 92%; max-height: 80vh; overflow-y: auto; box-shadow: var(--shadow-xl); }
+        .dialog h3 { font-size: 16px; font-weight: 600; color: var(--fg-0); margin-bottom: 8px; }
+        .dialog-text { color: var(--fg-3); font-size: 13px; line-height: 1.6; margin-bottom: 12px; }
+        .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+        /* Command palette */
+        .cmd-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; display: flex; align-items: flex-start; justify-content: center; padding-top: 20vh; animation: fadeIn 0.1s ease; }
+        .cmd-box { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius-lg); width: 480px; max-width: 92%; overflow: hidden; box-shadow: var(--shadow-xl); }
+        .cmd-input { width: 100%; padding: 14px 16px; background: transparent; border: none; border-bottom: 1px solid var(--border); color: var(--fg-0); font-size: 15px; font-family: var(--font); outline: none; }
+        .cmd-item { padding: 10px 16px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg-3); transition: background 80ms; }
+        .cmd-item:hover, .cmd-item.sel { background: var(--bg-2); color: var(--fg-0); }
+        .cmd-item .cmd-hint { margin-left: auto; font-size: 12px; color: var(--fg-4); }
+
+        /* Drawer */
+        .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 90; }
+        .drawer-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 440px; max-width: 92vw; background: var(--bg-1); border-left: 1px solid var(--border); z-index: 91; overflow-y: auto; padding: 24px; box-shadow: var(--shadow-xl); animation: slideRight 0.2s ease; }
+        .drawer-panel h3 { font-size: 16px; font-weight: 600; color: var(--fg-0); }
+        .kv-row { display: flex; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+        .kv-row:last-child { border-bottom: none; }
+        .kv-key { width: 130px; flex-shrink: 0; color: var(--fg-4); font-weight: 500; }
+        .kv-val { flex: 1; word-break: break-word; color: var(--fg-1); }
+
+        /* History chips */
+        .chip { display: inline-flex; padding: 3px 10px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 99px; font-size: 12px; color: var(--fg-3); cursor: pointer; transition: all var(--transition); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .chip:hover { border-color: var(--fg-4); color: var(--fg-1); }
+
+        /* Wizard */
+        .wizard { background: var(--accent-light); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px 24px; margin-bottom: 24px; }
+        .wizard h3 { font-size: 14px; font-weight: 600; color: var(--fg-0); margin-bottom: 12px; }
+        .wiz-steps { display: flex; gap: 8px; }
+        .wiz-step { text-align: center; cursor: pointer; flex: 1; padding: 12px 8px; border-radius: var(--radius-md); transition: background var(--transition); }
+        .wiz-step:hover { background: var(--ring); }
+        .wiz-step .num { font-size: 18px; font-weight: 700; color: var(--fg-4); }
+        .wiz-step.done .num { color: var(--green); }
+        .wiz-step.current .num { color: var(--accent); }
+        .wiz-step .step-label { font-size: 12px; color: var(--fg-3); margin-top: 4px; font-weight: 500; }
+
+        /* Toasts */
+        .toasts { position: fixed; top: 16px; right: 16px; z-index: 300; display: flex; flex-direction: column; gap: 6px; }
+        .toast { padding: 10px 16px; border-radius: var(--radius-md); font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px; box-shadow: var(--shadow-lg); border: 1px solid var(--border); animation: slideDown 0.2s ease; max-width: 380px; }
+        .toast-ok { background: var(--bg-1); color: var(--green-fg); }
+        .toast-err { background: var(--bg-1); color: var(--red-fg); }
+
+        /* Debug panel */
+        .debug { position: fixed; bottom: 0; left: 240px; right: 0; max-height: 260px; background: var(--bg-1); border-top: 1px solid var(--border); z-index: 80; display: flex; flex-direction: column; animation: slideUp 0.2s ease; }
+        .debug-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+        .debug-head h4 { font-size: 12px; font-weight: 600; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.04em; }
+        .debug-scroll { overflow-y: auto; flex: 1; font-family: var(--mono); font-size: 12px; }
+        .debug-row { padding: 6px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: baseline; }
+        .debug-row:hover { background: var(--bg-2); }
+        .debug-ts { color: var(--fg-4); white-space: nowrap; }
+        .debug-lvl { font-weight: 600; width: 40px; flex-shrink: 0; }
+        .debug-err { color: var(--red); } .debug-warn { color: var(--amber); } .debug-info { color: var(--blue); }
+        .debug-txt { color: var(--fg-2); flex: 1; word-break: break-word; }
+        .debug-expand { color: var(--fg-4); cursor: pointer; text-decoration: underline; font-size: 11px; margin-left: 6px; }
+        .debug-detail { padding: 4px 16px 4px 80px; color: var(--fg-4); white-space: pre-wrap; background: var(--bg-code); border-bottom: 1px solid var(--border); font-size: 11px; }
+
+        /* Worker badge */
+        .worker-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 500; }
+        .worker-on { background: var(--green-light); color: var(--green-fg); }
+
+        /* Empty state */
+        .empty-state { text-align: center; padding: 48px 24px; }
+        .empty-state-icon { font-size: 32px; margin-bottom: 12px; opacity: 0.25; }
+        .empty-state h3 { font-size: 15px; font-weight: 600; color: var(--fg-1); margin-bottom: 6px; }
+        .empty-state p { color: var(--fg-3); font-size: 13px; margin-bottom: 16px; max-width: 360px; margin-left: auto; margin-right: auto; }
+
+        /* Step indicator */
+        .step-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+        .step-icon { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; }
+        .step-ok { color: var(--green); }
+        .step-skip { color: var(--amber); }
+        .step-fail { color: var(--red); }
+
+        /* Utility */
+        .hidden { display: none !important; }
+        .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--fg-5); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
+        .loading { display: flex; align-items: center; justify-content: center; padding: 32px; color: var(--fg-4); gap: 8px; font-size: 13px; }
+        code { font-family: var(--mono); font-size: 0.9em; background: var(--bg-2); padding: 2px 6px; border-radius: 3px; }
+        kbd { display: inline-flex; align-items: center; padding: 2px 6px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 4px; font-size: 11px; font-family: var(--font); color: var(--fg-4); cursor: pointer; font-weight: 500; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        @keyframes slideRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <nav class="sidebar">
+        <div class="sb-brand">
+            <div class="sb-brand-name">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                <h1>pgsemantic</h1>
+            </div>
+            <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle theme">
+                <svg id="ico-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                <svg id="ico-moon" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+            </button>
+        </div>
+        <div class="sb-section">
+            <div class="sb-label">Overview</div>
+            <button class="sb-item active" data-p="dashboard" onclick="go('dashboard')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</button>
+            <button class="sb-item" data-p="search" onclick="go('search')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>Search</button>
+            <button class="sb-item" data-p="status" onclick="go('status')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Status</button>
+        </div>
+        <div class="sb-section">
+            <div class="sb-label">Setup</div>
+            <button class="sb-item" data-p="inspect" onclick="go('inspect')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>Inspect</button>
+            <button class="sb-item" data-p="apply" onclick="go('apply')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Apply</button>
+            <button class="sb-item" data-p="index" onclick="go('index')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg>Index</button>
+        </div>
+        <div class="sb-section">
+            <div class="sb-label">Settings</div>
+            <button class="sb-item" data-p="browse" onclick="go('browse')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>Tables</button>
+            <button class="sb-item" data-p="connection" onclick="go('connection')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Connection</button>
+            <button class="sb-item" data-p="mcp" onclick="go('mcp')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>MCP</button>
+        </div>
+        <div class="sb-footer">
+            <button class="sb-debug" onclick="toggleDebug()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h.01M8 16V5.5C8 3 10 1 12 1s4 2 4 4.5V16M6 12h12M5 8l1 1M19 8l-1 1M5 16l1-1M19 16l-1-1"/></svg>Debug Log<span class="sb-badge hidden" id="debug-count">0</span></button>
+            <div class="sb-conn" id="conn-bar"><span class="sb-dot sb-dot-err"></span>Checking...</div>
+        </div>
+    </nav>
+    <main class="content"><div class="container">
+        <div class="toasts" id="toasts"></div>
+
+        <!-- DASHBOARD -->
+        <div id="p-dashboard" class="page">
+            <div id="wizard-area"></div>
+            <div class="pg-header"><div class="pg-header-row"><div><div class="pg-title">Dashboard</div><div class="pg-desc">Overview of your semantic search setup</div></div><div class="pg-actions"><div id="worker-indicator"></div><button class="btn btn-secondary btn-sm" onclick="go('search')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>Search</button><kbd onclick="openPalette()">&#8984;K</kbd></div></div></div>
+            <div class="help-box">Your home base. <strong>Stats</strong> show tables configured, total embeddings, and pending work. Click any table row to search it. Use <strong>Start Worker</strong> to process pending rows. Press <kbd>&#8984;K</kbd> for the command palette.</div>
+            <div class="metrics" id="d-stats"></div>
+            <div class="card"><div class="card-head"><h3>Configured Tables</h3></div><div id="d-tables"><div class="loading"><span class="spin"></span>Loading...</div></div></div>
+        </div>
+
+        <!-- SEARCH -->
+        <div id="p-search" class="page hidden">
+            <div class="pg-header"><div><div class="pg-title">Search</div><div class="pg-desc">Natural language semantic search</div></div></div>
+            <div class="help-box">Search using <strong>natural language</strong> — describe what you're looking for and pgsemantic finds semantically similar rows. <strong>Similarity</strong> ranges 0–1 (above 0.5 is a strong match). Results appear live after 3 characters. Click a result to see full details.</div>
+            <div class="card"><div class="card-body">
+                <form onsubmit="doSearch(event)">
+                    <div class="field-row"><div class="field"><label class="label">Table</label><select class="select" id="s-table"><option value="">Select table...</option></select></div><div class="field"><label class="label">Limit</label><input class="input" id="s-limit" type="number" value="5" min="1" max="100"></div></div>
+                    <div class="field"><label class="label">Query</label><input class="input input-lg" id="s-query" placeholder="Describe what you're looking for..." maxlength="2000" autocomplete="off"></div>
+                    <div id="s-history" class="hidden" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px"></div>
+                    <button type="submit" class="btn btn-primary" id="btn-search">Search</button>
+                </form>
+            </div></div>
+            <div id="s-results" class="hidden"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span id="s-title" style="font-weight:600;color:var(--fg-0);font-size:14px"></span><span id="s-count" class="pill pill-blue"></span></div><div id="s-output"></div></div>
+        </div>
+
+        <!-- INSPECT -->
+        <div id="p-inspect" class="page hidden">
+            <div class="pg-header"><div class="pg-header-row"><div><div class="pg-title">Inspect Database</div><div class="pg-desc">Discover columns suitable for semantic search</div></div><div class="pg-actions"><button class="btn btn-primary" id="btn-inspect" onclick="doInspect()">Scan Database</button></div></div></div>
+            <div class="help-box">Click <strong>Scan Database</strong> to analyze your tables. Columns are scored by text content quality — longer, meaningful text scores higher. Click <strong>Apply</strong> on any column to set up semantic search.</div>
+            <div id="i-results"></div>
+        </div>
+
+        <!-- APPLY -->
+        <div id="p-apply" class="page hidden">
+            <div class="pg-header"><div><div class="pg-title">Apply</div><div class="pg-desc">Set up semantic search on a table</div></div></div>
+            <div class="help-box">Creates an embedding column (or shadow table), HNSW index, and change-tracking trigger. <strong>Model:</strong> <code>Local</code> runs on your machine (no API key). <code>OpenAI</code> needs <code>OPENAI_API_KEY</code>. <code>Ollama</code> needs Ollama running locally. <strong>Shadow table</strong> stores embeddings separately without modifying the original table.</div>
+            <div class="card"><div class="card-body">
+                <form onsubmit="doApply(event)">
+                    <div class="field-row"><div class="field"><label class="label">Table</label><input class="input" id="a-table" placeholder="table_name" required maxlength="128"></div><div class="field"><label class="label">Schema</label><input class="input" id="a-schema" value="public" maxlength="128"></div></div>
+                    <div class="field-row"><div class="field"><label class="label">Column</label><input class="input" id="a-col" placeholder="text_column" maxlength="128"><div class="field-hint">Single text column to embed</div></div><div class="field"><label class="label">Columns (multi)</label><input class="input" id="a-cols" placeholder="col1, col2, col3" maxlength="512"><div class="field-hint">Combine multiple columns (comma-separated)</div></div></div>
+                    <div class="field-row"><div class="field"><label class="label">Model</label><select class="select" id="a-model"><option value="local">Local (sentence-transformers)</option><option value="openai">OpenAI (text-embedding-3-small)</option><option value="ollama">Ollama (nomic-embed-text)</option></select></div><div class="field" style="display:flex;align-items:flex-end;padding-bottom:4px"><label class="check-label"><input type="checkbox" id="a-ext">Use external shadow table</label></div></div>
+                    <button type="submit" class="btn btn-primary" id="btn-apply">Apply Setup</button>
+                </form>
+            </div></div>
+            <div id="a-results" class="hidden"></div>
+        </div>
+
+        <!-- INDEX -->
+        <div id="p-index" class="page hidden">
+            <div class="pg-header"><div><div class="pg-title">Index</div><div class="pg-desc">Bulk embed existing rows</div></div></div>
+            <div class="help-box">Generates embeddings for existing rows in batches. <strong>Batch size 32</strong> is the default — lower it for memory issues, raise it for speed. New rows are tracked by the trigger; use the <strong>Worker</strong> to process them. <strong>Re-index</strong> clears all embeddings and regenerates from scratch.</div>
+            <div class="card"><div class="card-body">
+                <form onsubmit="doIndex(event)">
+                    <div class="field-row"><div class="field"><label class="label">Table</label><select class="select" id="x-table"><option value="">Select table...</option></select></div><div class="field"><label class="label">Batch Size</label><input class="input" id="x-batch" type="number" value="32" min="1" max="1000"></div></div>
+                    <div style="display:flex;gap:8px"><button type="submit" class="btn btn-primary" id="btn-index">Start Indexing</button><button type="button" class="btn btn-danger" onclick="doReindex()">Re-index</button></div>
+                </form>
+            </div></div>
+            <div id="x-results" class="hidden"><div id="x-output"></div></div>
+        </div>
+
+        <!-- STATUS -->
+        <div id="p-status" class="page hidden">
+            <div class="pg-header"><div class="pg-header-row"><div><div class="pg-title">Status</div><div class="pg-desc">Embedding health dashboard</div></div><div class="pg-actions"><label class="check-label"><input type="checkbox" id="auto-refresh" onchange="toggleAutoRefresh()">Auto-refresh</label></div></div></div>
+            <div class="help-box"><strong>Coverage</strong> = percentage of rows with embeddings. <strong>Pending</strong> = rows waiting to embed. <strong>Failed</strong> = rows that couldn't embed (empty content, encoding issues). Enable <strong>Auto-refresh</strong> to watch progress live.</div>
+            <div id="st-output"><div class="loading"><span class="spin"></span>Loading...</div></div>
+        </div>
+
+        <!-- TABLES -->
+        <div id="p-browse" class="page hidden">
+            <div class="pg-header"><div class="pg-header-row"><div><div class="pg-title">Table Browser</div><div class="pg-desc">Explore your database tables</div></div><div class="pg-actions"><input class="input" id="br-filter" placeholder="Filter tables..." style="width:200px" oninput="filterBrowse()"></div></div></div>
+            <div class="help-box">Browse all tables in your database. Click any row to see columns, types, and sample data in a table view. Use <strong>Inspect</strong> to evaluate a table for semantic search.</div>
+            <div id="br-summary" style="margin-bottom:12px;font-size:13px;color:var(--fg-3)"></div>
+            <div id="br-output"><div class="loading"><span class="spin"></span>Loading...</div></div>
+        </div>
+
+        <!-- MCP -->
+        <div id="p-mcp" class="page hidden">
+            <div class="pg-header"><div><div class="pg-title">MCP Integration</div><div class="pg-desc">Connect AI agents to your semantic search</div></div></div>
+            <div class="help-box"><strong>MCP</strong> lets AI assistants (Claude Desktop, Cursor) search your database directly. <strong>stdio</strong>: Claude runs pgsemantic as a subprocess (recommended). <strong>SSE</strong>: connects to this server's endpoint. Click <strong>Configure</strong> to auto-write the config, then restart your AI client.</div>
+            <div class="card"><div class="card-head"><h3>Server Status</h3></div><div class="card-body" id="mcp-status"><div class="loading"><span class="spin"></span></div></div></div>
+            <div class="card"><div class="card-head"><h3>Claude Desktop</h3></div><div class="card-body"><div id="mcp-claude-status" style="margin-bottom:16px"><div class="loading"><span class="spin"></span></div></div><div class="field"><label class="label">Transport</label><select class="select" id="mcp-mode"><option value="stdio">stdio (recommended)</option><option value="sse">SSE (connect to this server)</option></select></div><div style="margin-top:12px;display:flex;gap:8px;align-items:center"><button class="btn btn-primary" onclick="configureMcp()">Configure Claude Desktop</button><span id="mcp-configure-result"></span></div></div></div>
+            <div class="card"><div class="card-head"><h3>Config Snippets</h3><span style="color:var(--fg-4);font-size:12px">Click to copy</span></div><div class="card-body"><div class="field"><label class="label">stdio (Claude Desktop, Cursor)</label><pre class="code-block clickable" id="mcp-snippet-stdio" onclick="copySnippet('mcp-snippet-stdio')">Loading...</pre></div><div class="field"><label class="label">SSE / HTTP (remote agents)</label><pre class="code-block clickable" id="mcp-snippet-sse" onclick="copySnippet('mcp-snippet-sse')">Loading...</pre></div></div></div>
+            <div class="card"><div class="card-head"><h3>Available Tools</h3></div><div id="mcp-tools"></div></div>
+        </div>
+
+        <!-- CONNECTION -->
+        <div id="p-connection" class="page hidden">
+            <div class="pg-header"><div><div class="pg-title">Connection</div><div class="pg-desc">Database connection setup</div></div></div>
+            <div class="help-box">Connect to any PostgreSQL database with <strong>pgvector</strong>. Works with localhost, Docker, AWS RDS, Supabase, Neon — any PostgreSQL host. Format: <code>postgresql://user:pass@host:5432/db</code>. <strong>Test</strong> checks connectivity without saving. <strong>Save</strong> writes to your <code>.env</code> file.</div>
+            <div class="card"><div class="card-head"><h3>Current Connection</h3></div><div class="card-body" id="cn-current"><div class="loading"><span class="spin"></span></div></div></div>
+            <div class="card"><div class="card-head"><h3>New Connection</h3></div><div class="card-body"><div class="field"><label class="label">Database URL</label><input class="input" id="cn-url" placeholder="postgresql://user:pass@host:5432/dbname" maxlength="1000"></div><div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="testConn()">Test Connection</button><button class="btn btn-success" onclick="saveConn()">Save to .env</button></div><div id="cn-test" style="margin-top:12px"></div></div></div>
+        </div>
+    </div></main>
+</div>
+
+<!-- Command Palette -->
+<div id="palette" class="cmd-overlay hidden" onclick="if(event.target===this)closePalette()"><div class="cmd-box"><input id="pal-input" placeholder="Type a command..." oninput="filterPalette()" onkeydown="palKey(event)"><div id="pal-items"></div></div></div>
+<!-- Drawer -->
+<div id="drawer-bg" class="drawer-overlay hidden" onclick="closeDrawer()"></div>
+<div id="drawer" class="drawer-panel hidden"><div id="drawer-content"></div></div>
+<!-- Modal -->
+<div id="modal" class="overlay hidden" onclick="if(event.target===this)closeModal()"><div class="dialog" id="modal-content"></div></div>
+<!-- Debug -->
+<div id="debug-panel" class="debug hidden"><div class="debug-head"><h4>Debug Log</h4><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="clearDebug()">Clear</button><button class="btn btn-ghost btn-sm" onclick="toggleDebug()">Close</button></div></div><div class="debug-scroll" id="debug-body"></div></div>
+
+<script>
+let csrf='',curPage='dashboard',statusTimer=null,searchTimer=null;
+const searchHistory=JSON.parse(localStorage.getItem('pgs_history')||'{}');
+const debugLog=[];
+let debugOpen=false;
+const activeOps={};
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+function $(id){return document.getElementById(id);}
+function toast(msg,ok=true){const c=$('toasts'),t=document.createElement('div');t.className=`toast toast-${ok?'ok':'err'}`;t.textContent=msg;c.appendChild(t);setTimeout(()=>t.remove(),4000);}
+
+// Debug
+function logDebug(level,msg,detail){debugLog.unshift({time:new Date().toLocaleTimeString(),level,msg,detail:detail||null,id:Date.now()});if(debugLog.length>200)debugLog.length=200;updDebugCount();if(debugOpen)renderDebug();}
+function updDebugCount(){const n=debugLog.filter(e=>e.level==='error').length;const el=$('debug-count');if(n>0){el.textContent=n;el.classList.remove('hidden');}else el.classList.add('hidden');}
+function renderDebug(){$('debug-body').innerHTML=debugLog.map(e=>{const lc=e.level==='error'?'debug-err':e.level==='warn'?'debug-warn':'debug-info';const dl=e.detail?`<span class="debug-expand" onclick="$('dd-${e.id}').classList.toggle('hidden')">details</span>`:'';const dd=e.detail?`<div class="debug-detail hidden" id="dd-${e.id}">${esc(e.detail)}</div>`:'';return`<div class="debug-row"><span class="debug-ts">${esc(e.time)}</span><span class="debug-lvl ${lc}">${esc(e.level.toUpperCase())}</span><span class="debug-txt">${esc(e.msg)}${dl}</span></div>${dd}`;}).join('');}
+function toggleDebug(){debugOpen=!debugOpen;$('debug-panel').classList.toggle('hidden',!debugOpen);if(debugOpen)renderDebug();}
+function clearDebug(){debugLog.length=0;updDebugCount();renderDebug();}
+
+// API
+async function api(path,opts={}){const h={'Content-Type':'application/json'};if(opts.method==='POST')h['X-CSRF-Token']=csrf;logDebug('info',`${opts.method||'GET'} ${path}`);try{const fo={...opts,headers:{...h,...opts.headers}};if(opts.signal)fo.signal=opts.signal;const r=await fetch(path,fo);const d=await r.json();if(!r.ok){const m=d.detail||`HTTP ${r.status}`;logDebug('error',`${path} failed: ${m}`,JSON.stringify(d,null,2));throw new Error(m);}return d;}catch(e){if(e.name==='AbortError'){logDebug('warn',`${path}: cancelled`);throw e;}if(!e.message.startsWith('HTTP '))logDebug('error',`${path}: ${e.message}`,e.stack||'');throw e;}}
+function startOp(n){stopOp(n);const c=new AbortController();activeOps[n]=c;return c;}
+function stopOp(n){if(activeOps[n]){activeOps[n].abort();delete activeOps[n];}}
+function finishOp(n){delete activeOps[n];}
+function setBtn(id,loading,opName){const b=$(id);if(!b)return;if(loading){b.disabled=true;b._h=b.innerHTML;b.innerHTML='<span class="spin"></span> Working...';if(opName){let s=$(`stop-${opName}`);if(!s){s=document.createElement('button');s.id=`stop-${opName}`;s.className='btn btn-danger btn-sm';s.style.marginLeft='8px';s.innerHTML='Stop';s.onclick=()=>{stopOp(opName);toast('Cancelled');};b.parentNode.insertBefore(s,b.nextSibling);}s.classList.remove('hidden');}}else{b.disabled=false;if(b._h)b.innerHTML=b._h;if(opName){const s=$(`stop-${opName}`);if(s)s.classList.add('hidden');}}}
+
+// Theme
+function getTheme(){return localStorage.getItem('pgs_theme')||'light';}
+function applyTheme(t){document.documentElement.setAttribute('data-theme',t);$('ico-sun').classList.toggle('hidden',t==='dark');$('ico-moon').classList.toggle('hidden',t!=='dark');}
+function toggleTheme(){const t=getTheme()==='dark'?'light':'dark';localStorage.setItem('pgs_theme',t);applyTheme(t);}
+
+// Nav
+function go(p){curPage=p;document.querySelectorAll('.page').forEach(el=>el.classList.add('hidden'));$(`p-${p}`).classList.remove('hidden');document.querySelectorAll('.sb-item').forEach(n=>n.classList.remove('active'));const nb=document.querySelector(`.sb-item[data-p="${p}"]`);if(nb)nb.classList.add('active');if(p==='dashboard')loadDashboard();if(p==='search'){loadTableSels();loadSearchHistory();}if(p==='index')loadTableSels();if(p==='status')loadStatus();if(p==='browse')loadBrowse();if(p==='connection')loadConnInfo();if(p==='mcp')loadMcp();}
+
+// Init
+async function init(){applyTheme(getTheme());try{csrf=(await api('/api/csrf-token')).token;}catch(e){toast('Init failed: '+e.message,false);}checkConn();loadDashboard();document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();openPalette();}if(e.key==='Escape'){closePalette();closeDrawer();closeModal();}});}
+async function checkConn(){const el=$('conn-bar');try{const d=await api('/api/connection');if(d.connected){const v=d.pgvector_version?` · pgv${d.pgvector_version}`:'';el.innerHTML=`<span class="sb-dot sb-dot-ok"></span>Connected${v}`;}else el.innerHTML=`<span class="sb-dot sb-dot-err"></span>${esc(d.error||'Disconnected')}`;}catch(e){el.innerHTML=`<span class="sb-dot sb-dot-err"></span>Error`;}}
+
+// Palette
+const palCmds=[{name:'Search',hint:'Semantic search',action:()=>go('search')},{name:'Dashboard',hint:'Overview',action:()=>go('dashboard')},{name:'Inspect database',hint:'Scan columns',action:()=>{go('inspect');doInspect();}},{name:'Apply setup',hint:'Add semantic search',action:()=>go('apply')},{name:'Index table',hint:'Bulk embed',action:()=>go('index')},{name:'Status',hint:'Health check',action:()=>go('status')},{name:'Browse tables',hint:'Explore DB',action:()=>go('browse')},{name:'Connection',hint:'DB URL',action:()=>go('connection')},{name:'MCP',hint:'AI agents',action:()=>go('mcp')},{name:'Start worker',hint:'Background sync',action:()=>startWorker()},{name:'Stop worker',hint:'Stop sync',action:()=>stopWorker()},{name:'Toggle theme',hint:'Light/dark',action:()=>toggleTheme()},{name:'Debug log',hint:'View errors',action:()=>toggleDebug()},{name:'Refresh',hint:'Reload page',action:()=>go(curPage)}];
+let palIdx=0,palF=[...palCmds];
+function openPalette(){$('palette').classList.remove('hidden');$('pal-input').value='';palIdx=0;palF=[...palCmds];renderPal();$('pal-input').focus();}
+function closePalette(){$('palette').classList.add('hidden');}
+function renderPal(){$('pal-items').innerHTML=palF.map((c,i)=>`<div class="cmd-item${i===palIdx?' sel':''}" onmouseenter="palIdx=${i};renderPal()" onclick="palRun(${i})">${esc(c.name)}<span class="cmd-hint">${esc(c.hint)}</span></div>`).join('')||'<div class="cmd-item" style="color:var(--fg-4)">No matches</div>';}
+function filterPalette(){const q=$('pal-input').value.toLowerCase();palF=palCmds.filter(c=>c.name.toLowerCase().includes(q)||c.hint.toLowerCase().includes(q));palIdx=0;renderPal();}
+function palKey(e){if(e.key==='ArrowDown'){e.preventDefault();palIdx=Math.min(palIdx+1,palF.length-1);renderPal();}else if(e.key==='ArrowUp'){e.preventDefault();palIdx=Math.max(palIdx-1,0);renderPal();}else if(e.key==='Enter'&&palF.length)palRun(palIdx);else if(e.key==='Escape')closePalette();}
+function palRun(i){closePalette();if(palF[i])palF[i].action();}
+function openDrawer(h){$('drawer-content').innerHTML=h;$('drawer').classList.remove('hidden');$('drawer-bg').classList.remove('hidden');}
+function closeDrawer(){$('drawer').classList.add('hidden');$('drawer-bg').classList.add('hidden');}
+function openModal(h){$('modal-content').innerHTML=h;$('modal').classList.remove('hidden');}
+function closeModal(){$('modal').classList.add('hidden');}
+
+// Dashboard
+async function loadDashboard(){try{const[st,cn]=await Promise.all([api('/api/status'),api('/api/connection')]);const tables=st.tables||[];const emb=tables.reduce((s,t)=>s+(t.embedded||0),0);const tot=tables.reduce((s,t)=>s+(t.total||0),0);const pend=tables.reduce((s,t)=>s+(t.pending||0),0);$('d-stats').innerHTML=`<div class="metric"><div class="metric-value">${tables.length}</div><div class="metric-label">Tables</div></div><div class="metric"><div class="metric-value">${emb.toLocaleString()}</div><div class="metric-label">Embeddings</div></div><div class="metric"><div class="metric-value">${tot>0?Math.round(emb/tot*100):0}%</div><div class="metric-label">Coverage</div></div><div class="metric"><div class="metric-value">${pend}</div><div class="metric-label">Pending</div></div>`;
+const hasConn=cn.connected,hasApply=tables.length>0,hasIndex=tables.some(t=>(t.coverage_pct||0)>0);if(!hasConn||!hasApply||!hasIndex){$('wizard-area').innerHTML=`<div class="wizard"><h3>Getting Started</h3><div class="wiz-steps"><div class="wiz-step ${hasConn?'done':'current'}" onclick="go('connection')"><div class="num">${hasConn?'&#10003;':'1'}</div><div class="step-label">Connect</div></div><div class="wiz-step ${hasApply?'done':hasConn?'current':''}" onclick="go('inspect')"><div class="num">${hasApply?'&#10003;':'2'}</div><div class="step-label">Inspect & Apply</div></div><div class="wiz-step ${hasIndex?'done':hasApply?'current':''}" onclick="go('index')"><div class="num">${hasIndex?'&#10003;':'3'}</div><div class="step-label">Index</div></div><div class="wiz-step ${hasIndex?'current':''}" onclick="go('search')"><div class="num">4</div><div class="step-label">Search</div></div></div></div>`;}else $('wizard-area').innerHTML='';
+try{const ws=await api('/api/worker/status');$('worker-indicator').innerHTML=ws.running?`<span class="worker-badge worker-on">Worker running</span>`:`<button class="btn btn-success btn-sm" onclick="startWorker()">Start Worker</button>`;}catch(e){$('worker-indicator').innerHTML='';}
+if(!tables.length){$('d-tables').innerHTML=`<div class="card-body"><div class="empty-state"><div class="empty-state-icon">&#9634;</div><h3>No tables configured</h3><p>Scan your database to find columns suitable for semantic search.</p><button class="btn btn-primary" onclick="go('inspect')">Inspect Database</button></div></div>`;return;}
+let h='<table class="tbl"><thead><tr><th>Table</th><th>Columns</th><th>Model</th><th>Coverage</th><th></th></tr></thead><tbody>';for(const t of tables){if(t.error){h+=`<tr><td class="tbl-name">${esc(t.table)}</td><td colspan="4"><span class="pill pill-red">${esc(t.error)}</span></td></tr>`;continue;}const p=t.coverage_pct||0,pc=p>=100?'pill-green':p>=50?'pill-amber':'pill-red';h+=`<tr class="clickable" onclick="go('search');setTimeout(()=>{$('s-table').value='${esc(t.table)}'},100)"><td class="tbl-name">${esc(t.table)}</td><td>${esc((t.columns||[]).join(', '))}</td><td class="tbl-mono">${esc(t.model)}</td><td><span class="pill ${pc}">${t.embedded}/${t.total} (${p}%)</span></td><td onclick="event.stopPropagation()" style="text-align:right"><button class="btn btn-ghost btn-sm" onclick="go('search');setTimeout(()=>{$('s-table').value='${esc(t.table)}'},100)">Search</button><button class="btn btn-ghost btn-sm" onclick="confirmTeardown('${esc(t.table)}')">Remove</button></td></tr>`;}h+='</tbody></table>';$('d-tables').innerHTML=h;}catch(e){$('d-tables').innerHTML=`<div class="card-body"><p style="color:var(--red)">${esc(e.message)}</p></div>`;}}
+async function startWorker(){try{const d=await api('/api/worker/start',{method:'POST'});toast(d.message);loadDashboard();}catch(e){toast(e.message,false);}}
+async function stopWorker(){try{const d=await api('/api/worker/stop',{method:'POST'});toast(d.message);loadDashboard();}catch(e){toast(e.message,false);}}
+
+// Search
+function loadSearchHistory(){const t=$('s-table').value;const h=searchHistory[t]||[];if(!h.length){$('s-history').classList.add('hidden');return;}$('s-history').classList.remove('hidden');$('s-history').innerHTML=h.slice(0,10).map(q=>`<span class="chip" onclick="$('s-query').value='${esc(q)}';doSearch()">${esc(q)}</span>`).join('');}
+function saveSearchHistory(t,q){if(!searchHistory[t])searchHistory[t]=[];searchHistory[t]=[q,...searchHistory[t].filter(x=>x!==q)].slice(0,20);localStorage.setItem('pgs_history',JSON.stringify(searchHistory));}
+$('s-query')?.addEventListener?.('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{if($('s-query').value.trim().length>=3&&$('s-table').value)doSearch();},300);});
+$('s-table')?.addEventListener?.('change',loadSearchHistory);
+async function doSearch(e){if(e)e.preventDefault();const table=$('s-table').value,query=$('s-query').value.trim(),limit=parseInt($('s-limit').value)||5;if(!table||!query)return;const ctrl=startOp('search');setBtn('btn-search',true,'search');$('s-results').classList.remove('hidden');$('s-output').innerHTML='<div class="loading"><span class="spin"></span>Searching...</div>';try{const d=await api('/api/search',{method:'POST',body:JSON.stringify({query,table,limit}),signal:ctrl.signal});saveSearchHistory(table,query);loadSearchHistory();$('s-title').textContent=`Results for "${query}"`;$('s-count').textContent=`${(d.results||[]).length} results`;if(!(d.results||[]).length){$('s-output').innerHTML='<div class="empty-state"><div class="empty-state-icon">&#128270;</div><h3>No results found</h3><p>Try different keywords or check that the table is indexed.</p></div>';return;}let h='';for(let i=0;i<d.results.length;i++){const r=d.results[i],sim=r.similarity||0;const sc=sim>=0.5?'score-high':sim>=0.3?'score-mid':'score-low';let meta=[];for(const[k,v]of Object.entries(r)){if(k==='similarity'||k==='content')continue;meta.push(`<span style="color:var(--fg-4)">${esc(k)}:</span> ${esc(String(v))}`);}h+=`<div class="result" onclick='openDrawer(buildRowDrawer(${JSON.stringify(r)}))'><div class="result-head"><span class="result-rank ${sc}">#${i+1} · ${sim.toFixed(4)}</span><span class="result-meta">${meta.join(' &nbsp; ')}</span></div><div class="result-body">${esc(r.content||'')}</div></div>`;}$('s-output').innerHTML=h;}catch(e){if(e.name==='AbortError')$('s-output').innerHTML='<p style="color:var(--fg-4)">Search cancelled.</p>';else{$('s-output').innerHTML=`<p style="color:var(--red)">${esc(e.message)}</p>`;toast(e.message,false);}}finally{finishOp('search');setBtn('btn-search',false,'search');}}
+function buildRowDrawer(row){let h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h3>Row Details</h3><button class="btn btn-ghost btn-sm" onclick="closeDrawer()">&#10005;</button></div>';for(const[k,v]of Object.entries(row)){if(k==='similarity'){h+=`<div class="kv-row"><div class="kv-key">Similarity</div><div class="kv-val" style="font-weight:600;font-family:var(--mono)">${Number(v).toFixed(4)}</div></div>`;continue;}h+=`<div class="kv-row"><div class="kv-key">${esc(k)}</div><div class="kv-val">${esc(String(v||''))}</div></div>`;}return h;}
+
+// Inspect
+async function doInspect(){const ctrl=startOp('inspect');setBtn('btn-inspect',true,'inspect');$('i-results').innerHTML='<div class="loading"><span class="spin"></span>Scanning database...</div>';try{const d=await api('/api/inspect',{signal:ctrl.signal});if(!(d.candidates||[]).length){$('i-results').innerHTML='<div class="card"><div class="card-body"><div class="empty-state"><div class="empty-state-icon">&#9744;</div><h3>No text columns found</h3><p>Your database doesn\'t have text columns suitable for semantic search.</p></div></div></div>';return;}let h='<div class="card"><table class="tbl"><thead><tr><th>Table</th><th>Column</th><th>Score</th><th>Avg Length</th><th>Type</th><th></th></tr></thead><tbody>';for(const c of d.candidates){const al=c.avg_length>0?`${Math.round(c.avg_length).toLocaleString()} chars`:'—';h+=`<tr><td class="tbl-name">${esc(c.table)}</td><td class="tbl-mono">${esc(c.column)}</td><td style="color:var(--amber)">${esc(c.stars)}</td><td>${al}</td><td class="tbl-mono">${esc(c.data_type)}</td><td style="text-align:right"><button class="btn btn-primary btn-sm" onclick="quickApply('${esc(c.table)}','${esc(c.column)}','${esc(c.schema)}')">Apply</button></td></tr>`;}h+='</tbody></table></div>';$('i-results').innerHTML=h;}catch(e){if(e.name==='AbortError')$('i-results').innerHTML='<p style="color:var(--fg-4)">Scan cancelled.</p>';else{$('i-results').innerHTML=`<p style="color:var(--red)">${esc(e.message)}</p>`;toast(e.message,false);}}finally{finishOp('inspect');setBtn('btn-inspect',false,'inspect');}}
+function quickApply(t,c,s){go('apply');$('a-table').value=t;$('a-col').value=c;$('a-schema').value=s||'public';$('a-cols').value='';}
+
+// Apply
+async function doApply(e){e.preventDefault();const table=$('a-table').value.trim(),col=$('a-col').value.trim(),cols=$('a-cols').value.trim();const model=$('a-model').value,ext=$('a-ext').checked,schema=$('a-schema').value.trim()||'public';if(!col&&!cols){toast('Specify a column',false);return;}if(col&&cols){toast('Use column OR columns, not both',false);return;}const body=JSON.stringify({table,column:col,columns:cols,model,external:ext,schema_name:schema});openModal(`<h3>Confirm Apply</h3><div class="dialog-text">This will modify your database:<ul style="margin:8px 0 0 16px"><li>Add an embedding column (or shadow table) to <strong>${esc(table)}</strong></li><li>Create an HNSW index for similarity search</li><li>Install a change-tracking trigger</li></ul></div><div class="dialog-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="closeModal();execApply(${esc(JSON.stringify(body))})">Confirm</button></div>`);}
+async function execApply(bodyStr){const ctrl=startOp('apply');setBtn('btn-apply',true,'apply');$('a-results').classList.remove('hidden');$('a-results').innerHTML='<div class="card"><div class="card-body"><div class="loading"><span class="spin"></span>Setting up...</div></div></div>';try{const d=await api('/api/apply',{method:'POST',body:bodyStr,signal:ctrl.signal});let h='<div class="card"><div class="card-head"><h3>Setup Complete</h3></div><div class="card-body">';if(d.sql_preview)h+=`<div class="code-block" style="margin-bottom:16px">${esc(d.sql_preview)}</div>`;for(const s of(d.steps||[])){const ok=s.status==='ok'||s.status==='created';const cls=ok?'step-ok':s.status==='already_exists'?'step-skip':'step-fail';const icon=ok?'&#10003;':s.status==='already_exists'?'—':'&#10007;';h+=`<div class="step-row"><span class="step-icon ${cls}">${icon}</span><span>${esc(s.step)}</span><span class="pill ${ok?'pill-green':'pill-amber'}">${esc(s.status)}${s.version?' v'+esc(s.version):''}</span></div>`;}h+=`</div><div class="card-foot"><button class="btn btn-primary btn-sm" onclick="go('index')">Index this table</button><button class="btn btn-secondary btn-sm" onclick="go('dashboard')">Dashboard</button></div></div>`;$('a-results').innerHTML=h;toast(`Semantic search ready on ${d.table}!`);checkConn();}catch(e){if(e.name==='AbortError')$('a-results').innerHTML='<div class="card"><div class="card-body"><p style="color:var(--fg-4)">Setup cancelled.</p></div></div>';else{$('a-results').innerHTML=`<div class="card"><div class="card-body"><p style="color:var(--red)">${esc(e.message)}</p></div></div>`;toast(e.message,false);}}finally{finishOp('apply');setBtn('btn-apply',false,'apply');}}
+
+// Index
+async function doIndex(e){if(e)e.preventDefault();const table=$('x-table').value,batch=parseInt($('x-batch').value)||32;if(!table){toast('Select a table',false);return;}const ctrl=startOp('index');setBtn('btn-index',true,'index');$('x-results').classList.remove('hidden');$('x-output').innerHTML='<div class="loading"><span class="spin"></span>Embedding rows...</div>';try{const d=await api('/api/index',{method:'POST',body:JSON.stringify({table,batch_size:batch}),signal:ctrl.signal});const p=d.coverage||0;$('x-output').innerHTML=`<div class="card"><div class="card-body"><div class="metrics"><div class="metric"><div class="metric-value">${d.rows_embedded}</div><div class="metric-label">Rows Embedded</div></div><div class="metric"><div class="metric-value">${d.final_embedded||d.already_embedded||0}/${d.total}</div><div class="metric-label">Coverage</div></div><div class="metric"><div class="metric-value">${p}%</div><div class="metric-label">Complete</div></div></div><div class="progress"><div class="progress-fill" style="width:${p}%"></div></div></div><div class="card-foot"><button class="btn btn-primary btn-sm" onclick="go('search')">Start Searching</button><button class="btn btn-secondary btn-sm" onclick="go('status')">View Status</button></div></div>`;toast(d.message||`Embedded ${d.rows_embedded} rows`);}catch(e){if(e.name==='AbortError')$('x-output').innerHTML='<div class="card"><div class="card-body"><p style="color:var(--fg-4)">Indexing cancelled. Rows embedded so far are preserved.</p></div></div>';else{$('x-output').innerHTML=`<div class="card"><div class="card-body"><p style="color:var(--red)">${esc(e.message)}</p></div></div>`;toast(e.message,false);}}finally{finishOp('index');setBtn('btn-index',false,'index');}}
+async function doReindex(){const table=$('x-table').value;if(!table){toast('Select a table',false);return;}openModal(`<h3>Re-index ${esc(table)}?</h3><div class="dialog-text">This clears all existing embeddings and regenerates them. This cannot be undone.</div><div class="dialog-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-danger" onclick="closeModal();execReindex('${esc(table)}')">Clear & Re-index</button></div>`);}
+async function execReindex(table){const ctrl=startOp('index');setBtn('btn-index',true,'index');$('x-results').classList.remove('hidden');$('x-output').innerHTML='<div class="loading"><span class="spin"></span>Clearing and re-embedding...</div>';try{const batch=parseInt($('x-batch').value)||32;const d=await api('/api/reindex',{method:'POST',body:JSON.stringify({table,batch_size:batch}),signal:ctrl.signal});const p=d.coverage||0;$('x-output').innerHTML=`<div class="card"><div class="card-body"><div class="metrics"><div class="metric"><div class="metric-value">${d.rows_embedded}</div><div class="metric-label">Re-embedded</div></div><div class="metric"><div class="metric-value">${p}%</div><div class="metric-label">Coverage</div></div></div><div class="progress"><div class="progress-fill" style="width:${p}%"></div></div></div></div>`;toast(`Re-indexed ${d.rows_embedded} rows`);}catch(e){if(e.name==='AbortError')$('x-output').innerHTML='<div class="card"><div class="card-body"><p style="color:var(--fg-4)">Re-index cancelled.</p></div></div>';else{$('x-output').innerHTML=`<div class="card"><div class="card-body"><p style="color:var(--red)">${esc(e.message)}</p></div></div>`;toast(e.message,false);}}finally{finishOp('index');setBtn('btn-index',false,'index');}}
+
+// Teardown
+function confirmTeardown(table){openModal(`<h3>Remove ${esc(table)}?</h3><div class="dialog-text">This removes semantic search from this table:<ul style="margin:8px 0 0 16px"><li>Drop embedding column or shadow table</li><li>Remove trigger and trigger function</li><li>Delete pending queue entries</li><li>Remove from configuration</li></ul></div><p style="color:var(--red);font-size:13px;font-weight:500;margin-top:8px">This cannot be undone.</p><div class="dialog-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-danger" onclick="closeModal();execTeardown('${esc(table)}')">Remove</button></div>`);}
+async function execTeardown(table){try{await api('/api/teardown',{method:'POST',body:JSON.stringify({table,schema_name:'public'})});toast(`Removed semantic search from ${table}`);loadDashboard();}catch(e){toast(e.message,false);}}
+
+// Status
+async function loadStatus(){const el=$('st-output');try{const d=await api('/api/status');if(!(d.tables||[]).length){el.innerHTML=`<div class="card"><div class="card-body"><div class="empty-state"><div class="empty-state-icon">&#9634;</div><h3>No tables configured</h3><p>${esc(d.message||'Run apply first.')}</p><button class="btn btn-primary" onclick="go('inspect')">Get Started</button></div></div></div>`;return;}let h='<div class="card"><table class="tbl"><thead><tr><th>Table</th><th>Columns</th><th>Model</th><th>Storage</th><th>Coverage</th><th>Pending</th><th>Failed</th></tr></thead><tbody>';for(const t of d.tables){if(t.error){h+=`<tr><td class="tbl-name">${esc(t.table)}</td><td colspan="6"><span class="pill pill-red">${esc(t.error)}</span></td></tr>`;continue;}const p=t.coverage_pct||0,pc=p>=100?'pill-green':p>=50?'pill-amber':'pill-red';h+=`<tr><td class="tbl-name">${esc(t.table)}</td><td>${esc((t.columns||[]).join(', '))}</td><td class="tbl-mono">${esc(t.model)}</td><td>${esc(t.storage_mode)}</td><td><span class="pill ${pc}">${t.embedded}/${t.total} (${p}%)</span></td><td><span class="pill ${t.pending>0?'pill-amber':'pill-default'}">${t.pending}</span></td><td><span class="pill ${t.failed>0?'pill-red':'pill-default'}">${t.failed}</span></td></tr>`;}h+='</tbody></table></div>';el.innerHTML=h;}catch(e){el.innerHTML=`<p style="color:var(--red)">${esc(e.message)}</p>`;}}
+function toggleAutoRefresh(){if($('auto-refresh').checked)statusTimer=setInterval(loadStatus,5000);else{clearInterval(statusTimer);statusTimer=null;}}
+
+// Browse
+let _browseData=[];
+async function loadBrowse(){$('br-output').innerHTML='<div class="loading"><span class="spin"></span>Loading...</div>';$('br-summary').textContent='';try{const d=await api('/api/database/tables');_browseData=d.tables||[];renderBrowse(_browseData);}catch(e){$('br-output').innerHTML=`<p style="color:var(--red)">${esc(e.message)}</p>`;}}
+function filterBrowse(){const q=($('br-filter').value||'').toLowerCase();const filtered=_browseData.filter(t=>t.name.toLowerCase().includes(q)||t.schema.toLowerCase().includes(q)||t.columns.some(c=>c.name.toLowerCase().includes(q)));renderBrowse(filtered);}
+function renderBrowse(tables){if(!tables.length){$('br-summary').textContent='';$('br-output').innerHTML='<div class="card"><div class="card-body"><div class="empty-state"><div class="empty-state-icon">&#9634;</div><h3>No tables found</h3><p>Connect to a database first.</p></div></div></div>';return;}const totalRows=tables.reduce((s,t)=>s+(t.row_count||0),0);$('br-summary').innerHTML=`<strong>${tables.length}</strong> table${tables.length!==1?'s':''} &middot; <strong>${totalRows.toLocaleString()}</strong> total rows`;let h='<div class="card"><table class="tbl"><thead><tr><th>Table</th><th>Schema</th><th>Columns</th><th>Rows</th><th></th></tr></thead><tbody>';for(const t of tables){const cn=t.columns.map(c=>c.name).join(', ');const colTypes=t.columns.map(c=>`${c.name} (${c.type})`).join('\n');h+=`<tr class="clickable" onclick="viewTable('${esc(t.name)}','${esc(t.schema)}')"><td class="tbl-name">${esc(t.name)}</td><td>${esc(t.schema)}</td><td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg-3)" title="${esc(colTypes)}"><span class="pill pill-default" style="margin-right:4px">${t.columns.length}</span>${esc(cn)}</td><td>${(t.row_count||0).toLocaleString()}</td><td onclick="event.stopPropagation()" style="text-align:right"><button class="btn btn-secondary btn-sm" onclick="viewTable('${esc(t.name)}','${esc(t.schema)}')" style="margin-right:4px">View</button><button class="btn btn-primary btn-sm" onclick="quickApply('${esc(t.name)}','','${esc(t.schema)}');go('inspect')">Inspect</button></td></tr>`;}h+='</tbody></table></div>';$('br-output').innerHTML=h;}
+async function viewTable(name,schema){openDrawer('<div class="loading"><span class="spin"></span>Loading...</div>');try{const[info,sample]=await Promise.all([api('/api/database/tables'),api(`/api/database/tables/${name}/sample?schema=${schema}&limit=10`)]);const tbl=(info.tables||[]).find(t=>t.name===name);let h=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h3>${esc(name)}</h3><button class="btn btn-ghost btn-sm" onclick="closeDrawer()">&#10005;</button></div>`;if(tbl){h+=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap"><span class="pill pill-blue">${tbl.columns.length} columns</span><span class="pill pill-default">${(tbl.row_count||0).toLocaleString()} rows</span><span class="pill pill-default">${esc(tbl.schema)}</span></div>`;h+='<div style="font-size:13px;font-weight:600;color:var(--fg-1);margin-bottom:8px">Columns</div><table class="tbl"><thead><tr><th>Name</th><th>Type</th><th>Nullable</th></tr></thead><tbody>';for(const c of tbl.columns){const typeColor=c.type.includes('char')||c.type==='text'?'var(--green-fg)':c.type.includes('int')||c.type==='numeric'?'var(--blue-fg)':'var(--fg-3)';h+=`<tr><td class="tbl-mono">${esc(c.name)}</td><td class="tbl-mono" style="color:${typeColor}">${esc(c.type)}</td><td>${c.nullable?'<span style="color:var(--fg-4)">Yes</span>':'<span style="color:var(--fg-1)">No</span>'}</td></tr>`;}h+='</tbody></table>';}if((sample.rows||[]).length){const keys=Object.keys(sample.rows[0]);h+='<div style="font-size:13px;font-weight:600;color:var(--fg-1);margin:20px 0 8px">Sample Data</div><div style="overflow-x:auto"><table class="tbl"><thead><tr>';for(const k of keys)h+=`<th>${esc(k)}</th>`;h+='</tr></thead><tbody>';for(const row of sample.rows){h+='<tr>';for(const k of keys){const v=String(row[k]||'');h+=`<td class="tbl-mono" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(v)}">${esc(v)}</td>`;}h+='</tr>';}h+='</tbody></table></div>';}$('drawer-content').innerHTML=h;}catch(e){$('drawer-content').innerHTML=`<p style="color:var(--red)">${esc(e.message)}</p>`;}}
+
+// MCP
+async function loadMcp(){try{const[status,snippets]=await Promise.all([api('/api/mcp/status'),api('/api/mcp/config-snippet')]);$('mcp-status').innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span class="sb-dot sb-dot-ok"></span><span>MCP SSE server running at <code>${esc(status.sse_endpoint||snippets.sse_endpoint)}</code></span></div><div style="color:var(--fg-4);font-size:13px;margin-top:6px">AI agents can connect to this endpoint while the UI is running.</div>`;if(status.pgsemantic_configured)$('mcp-claude-status').innerHTML=`<span class="pill pill-green">Configured</span> <span style="margin-left:6px;color:var(--fg-3)">pgsemantic is set up in Claude Desktop</span>`;else if(status.config_exists)$('mcp-claude-status').innerHTML=`<span class="pill pill-amber">Not configured</span> <span style="margin-left:6px;color:var(--fg-3)">Config exists but pgsemantic not added</span>`;else $('mcp-claude-status').innerHTML=`<span class="pill pill-red">Not found</span> <span style="margin-left:6px;color:var(--fg-4)">Claude Desktop config not found</span>`;$('mcp-snippet-stdio').textContent=snippets.stdio;$('mcp-snippet-sse').textContent=snippets.sse;let h='<table class="tbl"><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>';for(const t of(snippets.tools||[]))h+=`<tr><td class="tbl-mono" style="color:var(--blue)">${esc(t.name)}</td><td>${esc(t.description)}</td></tr>`;h+='</tbody></table>';$('mcp-tools').innerHTML=h;}catch(e){$('mcp-status').innerHTML=`<p style="color:var(--red)">${esc(e.message)}</p>`;}}
+async function configureMcp(){const mode=$('mcp-mode').value;openModal(`<h3>Configure Claude Desktop</h3><div class="dialog-text">This will ${mode==='sse'?"point Claude Desktop at this server's MCP endpoint":'configure Claude Desktop to run pgsemantic via stdio'}.</div><div class="dialog-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="closeModal();execConfigureMcp()">Configure</button></div>`);}
+async function execConfigureMcp(){const mode=$('mcp-mode').value,host=window.location.hostname||'localhost',port=parseInt(window.location.port)||8080;try{const d=await api('/api/mcp/configure',{method:'POST',body:JSON.stringify({mode,host,port})});toast(d.message);$('mcp-configure-result').innerHTML=`<span class="pill pill-green">Done</span> <span style="color:var(--fg-4);font-size:12px;margin-left:4px">Restart Claude Desktop</span>`;loadMcp();}catch(e){toast(e.message,false);$('mcp-configure-result').innerHTML=`<span class="pill pill-red">Error</span>`;}}
+function copySnippet(id){navigator.clipboard.writeText($(id).textContent).then(()=>toast('Copied to clipboard')).catch(()=>toast('Copy failed',false));}
+
+// Connection
+async function loadConnInfo(){try{const d=await api('/api/connection');if(d.connected)$('cn-current').innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="sb-dot sb-dot-ok"></span><strong style="color:var(--fg-0)">Connected</strong><code style="font-size:12px">${esc(d.database_url)}</code>${d.pgvector_version?`<span class="pill pill-green">pgvector ${esc(d.pgvector_version)}</span>`:''}</div>`;else $('cn-current').innerHTML=`<span class="sb-dot sb-dot-err"></span><span style="color:var(--fg-3)">${esc(d.error||'Not connected')}</span>`;}catch(e){$('cn-current').innerHTML=`<span class="sb-dot sb-dot-err"></span>Error`;}}
+async function testConn(){const url=$('cn-url').value.trim();if(!url){toast('Enter a database URL',false);return;}$('cn-test').innerHTML='<div class="loading"><span class="spin"></span>Testing...</div>';try{const d=await api('/api/connection/test',{method:'POST',body:JSON.stringify({database_url:url})});if(d.success)$('cn-test').innerHTML=`<span class="pill pill-green">Connected</span> <code style="font-size:12px">${esc(d.masked_url)}</code> ${d.pgvector_version?'<span class="pill pill-blue">pgvector '+esc(d.pgvector_version)+'</span>':'<span class="pill pill-amber">pgvector not installed</span>'}`;else $('cn-test').innerHTML=`<span class="pill pill-red">Failed</span> <span style="color:var(--fg-3);font-size:13px">${esc(d.error)}</span>`;}catch(e){$('cn-test').innerHTML=`<span class="pill pill-red">Error</span> <span style="color:var(--fg-3);font-size:13px">${esc(e.message)}</span>`;}}
+async function saveConn(){const url=$('cn-url').value.trim();if(!url){toast('Enter a URL first',false);return;}openModal(`<h3>Save Connection</h3><div class="dialog-text">This saves the database URL to your <code>.env</code> file. The password will be stored in plain text.</div><div class="dialog-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="closeModal();execSaveConn()">Save</button></div>`);}
+async function execSaveConn(){try{const d=await api('/api/connection/save',{method:'POST',body:JSON.stringify({database_url:$('cn-url').value.trim()})});toast(d.message);checkConn();loadConnInfo();}catch(e){toast(e.message,false);}}
+async function loadTableSels(){try{const d=await api('/api/tables');for(const id of['s-table','x-table']){const sel=$(id);if(!sel)continue;const cur=sel.value;sel.innerHTML='<option value="">Select table...</option>';for(const t of(d.tables||[])){const o=document.createElement('option');o.value=t.name;o.textContent=`${t.name} (${t.columns.join(', ')})`;sel.appendChild(o);}if(cur)sel.value=cur;}}catch(e){}}
+init();
+</script>
+</body>
+</html>
