@@ -347,6 +347,9 @@ async def save_connection(req: ConnectionTestRequest):
         lines = [f"{k}={v}" for k, v in existing.items()]
         env_path.write_text("\n".join(lines) + "\n")
 
+        # Update running process so new URL takes effect immediately
+        os.environ["DATABASE_URL"] = req.database_url
+
         return {"success": True, "message": "DATABASE_URL saved to .env"}
     except Exception as e:
         raise HTTPException(500, f"Failed to save .env: {e}")
@@ -392,7 +395,20 @@ async def list_all_database_tables():
             for t in tables:
                 tname = t["table_name"]
                 tschema = t["table_schema"]
-                if tname == "pgvector_setup_queue":
+                # Skip internal pgsemantic tables and Supabase system tables
+                _skip_prefixes = (
+                    "pgvector_setup_", "pgsemantic_",
+                    "auth_", "storage_", "realtime_",
+                    "supabase_", "_realtime", "schema_migrations",
+                    "extensions", "buckets", "objects", "s3_multipart",
+                    "hooks", "mfa_", "sso_", "saml_", "flow_state",
+                    "refresh_tokens", "audit_log", "instances",
+                    "sessions", "users", "identities", "one_time_tokens",
+                )
+                _skip_schemas = ("auth", "storage", "realtime", "supabase_functions", "extensions", "vault", "pgsodium")
+                if tschema in _skip_schemas:
+                    continue
+                if any(tname.startswith(p) or tname == p.rstrip("_") for p in _skip_prefixes):
                     continue
 
                 # Get columns
