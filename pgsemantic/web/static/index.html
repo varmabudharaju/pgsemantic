@@ -129,19 +129,24 @@
         .tbl-mono { font-family: var(--mono); font-size: 12px; color: var(--fg-3); }
 
         /* Buttons */
-        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; border-radius: var(--radius); font-size: 13px; font-weight: 500; font-family: var(--font); cursor: pointer; border: 1px solid transparent; transition: all var(--transition); white-space: nowrap; line-height: 1; }
-        .btn-sm { padding: 5px 10px; font-size: 12px; }
-        .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
-        .btn-primary:hover { background: var(--accent-hover); }
-        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-secondary { background: var(--bg-1); color: var(--fg-1); border-color: var(--border); }
-        .btn-secondary:hover { background: var(--bg-2); border-color: var(--border-hover); }
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; border-radius: var(--radius); font-size: 13px; font-weight: 500; font-family: var(--font); cursor: pointer; border: 1px solid transparent; transition: all var(--transition); white-space: nowrap; line-height: 1; outline: none; }
+        .btn:focus-visible { box-shadow: 0 0 0 3px var(--ring); }
+        .btn-sm { padding: 5px 11px; font-size: 12px; }
+        .btn-primary { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, white 12%), var(--accent)); color: var(--accent-fg); border-color: var(--accent-hover); box-shadow: var(--shadow-xs), inset 0 1px 0 rgba(255,255,255,0.12); }
+        .btn-primary:hover:not(:disabled) { background: linear-gradient(180deg, color-mix(in srgb, var(--accent-hover) 88%, white 12%), var(--accent-hover)); transform: translateY(-1px); box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255,255,255,0.1); }
+        .btn-primary:active { transform: translateY(0); box-shadow: var(--shadow-xs); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-secondary { background: var(--bg-1); color: var(--fg-1); border-color: var(--border-strong); box-shadow: var(--shadow-xs); }
+        .btn-secondary:hover { background: var(--bg-2); border-color: var(--border-hover); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+        .btn-secondary:active { transform: translateY(0); }
         .btn-ghost { background: transparent; color: var(--fg-3); border-color: transparent; }
         .btn-ghost:hover { background: var(--bg-2); color: var(--fg-1); }
-        .btn-danger { background: var(--red-light); color: var(--red-fg); border-color: transparent; }
-        .btn-danger:hover { background: var(--red); color: white; }
-        .btn-success { background: var(--green-light); color: var(--green-fg); border-color: transparent; }
-        .btn-success:hover { background: var(--green); color: white; }
+        .btn-danger { background: var(--red-light); color: var(--red-fg); border-color: transparent; box-shadow: var(--shadow-xs); }
+        .btn-danger:hover { background: var(--red); color: white; transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+        .btn-danger:active { transform: translateY(0); }
+        .btn-success { background: var(--green-light); color: var(--green-fg); border-color: transparent; box-shadow: var(--shadow-xs); }
+        .btn-success:hover { background: var(--green); color: white; transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+        .btn-success:active { transform: translateY(0); }
 
         /* Forms */
         .field { margin-bottom: 16px; }
