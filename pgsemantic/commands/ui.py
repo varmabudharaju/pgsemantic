@@ -4,6 +4,8 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
+from pgsemantic.config import load_settings
+
 console = Console()
 
 
@@ -44,10 +46,11 @@ def ui_command(
     console.print("[dim]Press Ctrl+C to stop.[/dim]")
     console.print()
 
+    settings = load_settings()
     uvicorn.run(
         "pgsemantic.web.app:app",
         host=host,
         port=port,
         reload=reload,
-        log_level="info",
+        log_level=getattr(settings, "log_level", "info"),
     )

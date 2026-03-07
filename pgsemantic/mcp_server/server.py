@@ -7,6 +7,7 @@ This is library code — uses logging only, no Rich or print().
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 
 from mcp.server.fastmcp import FastMCP
@@ -46,7 +47,8 @@ def _get_or_create_provider(
     ollama_base_url: str | None = None,
 ) -> object:
     """Return a cached embedding provider, creating it on first use."""
-    cache_key = f"{model}:{api_key or ''}:{ollama_base_url or ''}"
+    api_key_hash = hashlib.sha256((api_key or "").encode()).hexdigest()[:16]
+    cache_key = f"{model}:{api_key_hash}:{ollama_base_url or ''}"
     if cache_key not in _provider_cache:
         _provider_cache[cache_key] = get_provider(
             model, api_key=api_key, ollama_base_url=ollama_base_url

@@ -5,6 +5,7 @@ import json
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -112,8 +113,8 @@ def _print_rich_table(
         console.print()
         console.print("Next step:")
         console.print(
-            f"  [cyan]pgsemantic apply --table {best.table_name} "
-            f"--column {best.column_name}[/cyan]"
+            f"  [cyan]pgsemantic apply --table {escape(best.table_name)} "
+            f"--column {escape(best.column_name)}[/cyan]"
         )
     console.print()
 
