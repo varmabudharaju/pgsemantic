@@ -241,6 +241,11 @@ class ConnectionTestRequest(BaseModel):
     database_url: str = Field(..., min_length=10, max_length=1000)
 
 
+class SaveApiKeyRequest(BaseModel):
+    key_name: str = Field(..., pattern=r"^(OPENAI_API_KEY|OLLAMA_BASE_URL)$")
+    key_value: str = Field(..., min_length=1, max_length=500)
+
+
 class TeardownRequest(BaseModel):
     table: str = Field(..., min_length=1, max_length=128)
     schema_name: str = Field("public", max_length=128)
@@ -351,6 +356,39 @@ async def save_connection(req: ConnectionTestRequest):
         os.environ["DATABASE_URL"] = req.database_url
 
         return {"success": True, "message": "DATABASE_URL saved to .env"}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to save .env: {e}")
+
+
+@app.get("/api/connection/api-keys")
+async def get_api_keys():
+    """Return which API keys are configured. Never returns actual key values."""
+    settings = load_settings()
+    return {
+        "openai_configured": bool(settings.openai_api_key),
+        "ollama_url": settings.ollama_base_url,
+    }
+
+
+@app.post("/api/connection/save-api-key")
+async def save_api_key(req: SaveApiKeyRequest):
+    """Save an API key to .env file. Only whitelisted key names accepted."""
+    env_path = Path.cwd() / ".env"
+    try:
+        existing: dict[str, str] = {}
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, _, val = line.partition("=")
+                    existing[key.strip()] = val.strip()
+
+        existing[req.key_name] = req.key_value
+        lines = [f"{k}={v}" for k, v in existing.items()]
+        env_path.write_text("\n".join(lines) + "\n")
+        os.environ[req.key_name] = req.key_value
+
+        return {"success": True, "message": f"{req.key_name} saved to .env"}
     except Exception as e:
         raise HTTPException(500, f"Failed to save .env: {e}")
 

@@ -497,6 +497,13 @@
             <div class="help-box">Connect to any PostgreSQL database with <strong>pgvector</strong>. Works with localhost, Docker, AWS RDS, Supabase, Neon — any PostgreSQL host. Format: <code>postgresql://user:pass@host:5432/db</code>. <strong>Test</strong> checks connectivity without saving. <strong>Save</strong> writes to your <code>.env</code> file.</div>
             <div class="card"><div class="card-head"><h3>Current Connection</h3></div><div class="card-body" id="cn-current"><div class="loading"><span class="spin"></span></div></div></div>
             <div class="card"><div class="card-head"><h3>New Connection</h3></div><div class="card-body"><div class="field"><label class="label">Database URL</label><input class="input" id="cn-url" placeholder="postgresql://user:pass@host:5432/dbname" maxlength="1000"></div><div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="testConn()">Test Connection</button><button class="btn btn-success" onclick="saveConn()">Save to .env</button></div><div id="cn-test" style="margin-top:12px"></div></div></div>
+            <div class="card"><div class="card-head"><h3>API Keys</h3></div><div class="card-body">
+                <div id="ak-status" style="margin-bottom:20px"><div class="loading"><span class="spin"></span></div></div>
+                <div class="field"><label class="label">OpenAI API Key</label><input class="input" id="ak-openai" type="password" placeholder="sk-..." maxlength="200" autocomplete="off"></div>
+                <div class="field-hint" style="margin-bottom:16px">Required for <strong>OpenAI Small</strong> and <strong>OpenAI Large</strong> embedding models. Saved to your <code>.env</code> file — never exposed to the browser.</div>
+                <button class="btn btn-primary" onclick="saveApiKey()">Save API Key</button>
+                <div id="ak-result" style="margin-top:12px"></div>
+            </div></div>
         </div>
     </div></main>
 </div>
@@ -541,7 +548,7 @@ function applyTheme(t){document.documentElement.setAttribute('data-theme',t);$('
 function toggleTheme(){const t=getTheme()==='dark'?'light':'dark';localStorage.setItem('pgs_theme',t);applyTheme(t);}
 
 // Nav
-function go(p){curPage=p;document.querySelectorAll('.page').forEach(el=>el.classList.add('hidden'));$(`p-${p}`).classList.remove('hidden');document.querySelectorAll('.sb-item').forEach(n=>n.classList.remove('active'));const nb=document.querySelector(`.sb-item[data-p="${p}"]`);if(nb)nb.classList.add('active');if(p==='dashboard')loadDashboard();if(p==='search'){loadTableSels();loadSearchHistory();}if(p==='index'){loadTableSels();loadIndexWorker();}if(p==='apply')loadApplyTables();if(p==='status')loadStatus();if(p==='browse')loadBrowse();if(p==='connection')loadConnInfo();if(p==='mcp')loadMcp();}
+function go(p){curPage=p;document.querySelectorAll('.page').forEach(el=>el.classList.add('hidden'));$(`p-${p}`).classList.remove('hidden');document.querySelectorAll('.sb-item').forEach(n=>n.classList.remove('active'));const nb=document.querySelector(`.sb-item[data-p="${p}"]`);if(nb)nb.classList.add('active');if(p==='dashboard')loadDashboard();if(p==='search'){loadTableSels();loadSearchHistory();}if(p==='index'){loadTableSels();loadIndexWorker();}if(p==='apply')loadApplyTables();if(p==='status')loadStatus();if(p==='browse')loadBrowse();if(p==='connection'){loadConnInfo();loadApiKeys();}if(p==='mcp')loadMcp();}
 
 // Init
 async function init(){applyTheme(getTheme());try{csrf=(await api('/api/csrf-token')).token;}catch(e){toast('Init failed: '+e.message,false);}checkConn();go('connection');document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();openPalette();}if(e.key==='Escape'){closePalette();closeDrawer();closeModal();}});}
@@ -632,6 +639,21 @@ async function loadMcp(){try{const[status,snippets]=await Promise.all([api('/api
 async function configureMcp(){const mode=$('mcp-mode').value;openModal(`<h3>Configure Claude Desktop</h3><div class="dialog-text">This will ${mode==='sse'?"point Claude Desktop at this server's MCP endpoint":'configure Claude Desktop to run pgsemantic via stdio'}.</div><div class="dialog-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="closeModal();execConfigureMcp()">Configure</button></div>`);}
 async function execConfigureMcp(){const mode=$('mcp-mode').value,host=window.location.hostname||'localhost',port=parseInt(window.location.port)||8080;try{const d=await api('/api/mcp/configure',{method:'POST',body:JSON.stringify({mode,host,port})});toast(d.message);$('mcp-configure-result').innerHTML=`<span class="pill pill-green">Done</span> <span style="color:var(--fg-4);font-size:12px;margin-left:4px">Restart Claude Desktop</span>`;loadMcp();}catch(e){toast(e.message,false);$('mcp-configure-result').innerHTML=`<span class="pill pill-red">Error</span>`;}}
 function copySnippet(id){navigator.clipboard.writeText($(id).textContent).then(()=>toast('Copied to clipboard')).catch(()=>toast('Copy failed',false));}
+
+// API Keys
+async function loadApiKeys(){
+  const el=$('ak-status');if(!el)return;
+  try{const d=await api('/api/connection/api-keys');
+    el.innerHTML=d.openai_configured
+      ?`<span class="pill pill-green">&#10003; OpenAI API Key configured</span>`
+      :`<span class="pill pill-amber">OpenAI API Key not set — required for OpenAI embedding models</span>`;}
+  catch(e){el.innerHTML='';}}
+async function saveApiKey(){
+  const val=$('ak-openai').value.trim();const res=$('ak-result');
+  if(!val){toast('Enter an API key',false);return;}
+  try{await api('/api/connection/save-api-key',{method:'POST',body:JSON.stringify({key_name:'OPENAI_API_KEY',key_value:val})});
+    $('ak-openai').value='';res.innerHTML='';toast('OpenAI API key saved');loadApiKeys();}
+  catch(e){toast(e.message,false);}}
 
 // Connection
 async function loadConnInfo(){try{const d=await api('/api/connection');if(d.connected)$('cn-current').innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="sb-dot sb-dot-ok"></span><strong style="color:var(--fg-0)">Connected</strong><code style="font-size:12px">${esc(d.database_url)}</code>${d.pgvector_version?`<span class="pill pill-green">pgvector ${esc(d.pgvector_version)}</span>`:''}</div>`;else $('cn-current').innerHTML=`<span class="sb-dot sb-dot-err"></span><span style="color:var(--fg-3)">${esc(d.error||'Not connected')}</span>`;}catch(e){$('cn-current').innerHTML=`<span class="sb-dot sb-dot-err"></span>Error`;}}
