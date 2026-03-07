@@ -399,13 +399,21 @@ async def save_api_key(req: SaveApiKeyRequest):
 
 
 @app.get("/api/inspect")
-async def inspect_db():
-    """Scan database and score columns for semantic search suitability."""
+async def inspect_db(table: str | None = None):
+    """Scan database and score columns for semantic search suitability.
+
+    Optional ?table=name filters results to a single table server-side.
+    """
+    if table is not None:
+        _validate_identifier(table)
     db_url = _get_db_url()
     try:
         with get_connection(db_url, register_vector_type=False) as conn:
             pgv_version = get_pgvector_version(conn)
             candidates = inspect_database(conn)
+
+        if table is not None:
+            candidates = [c for c in candidates if c.table_name == table]
 
         return {
             "pgvector_version": ".".join(str(v) for v in pgv_version) if pgv_version else None,
@@ -749,7 +757,7 @@ async def index_table(req: IndexRequest):
                 return {
                     "success": True, "rows_embedded": 0, "total": total,
                     "final_embedded": already,
-                    "coverage": round(already / total * 100, 1) if total > 0 else 100.0,
+                    "coverage": min(round(already / total * 100, 1), 100.0) if total > 0 else 100.0,
                     "message": "All rows already embedded",
                 }
 
@@ -797,7 +805,7 @@ async def index_table(req: IndexRequest):
         return {
             "success": True, "rows_embedded": rows_embedded, "total": total,
             "final_embedded": final_embedded,
-            "coverage": round(final_embedded / total * 100, 1) if total > 0 else 100.0,
+            "coverage": min(round(final_embedded / total * 100, 1), 100.0) if total > 0 else 100.0,
         }
 
     except Exception as e:
@@ -1001,7 +1009,7 @@ async def status_dashboard():
                         total = count_total_with_content(conn, tc.table, tc.column, schema=tc.schema, source_columns=tc.source_columns)
                     pending = count_pending(conn, tc.table)
                     failed = count_failed(conn, tc.table)
-                    pct = round(embedded / total * 100, 1) if total > 0 else 0.0
+                    pct = min(round(embedded / total * 100, 1), 100.0) if total > 0 else 0.0
 
                     tables.append({
                         "table": tc.table, "columns": tc.source_columns,
