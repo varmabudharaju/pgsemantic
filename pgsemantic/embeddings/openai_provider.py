@@ -17,15 +17,15 @@ logger = logging.getLogger(__name__)
 
 
 class OpenAIProvider:
-    """Embedding provider using OpenAI text-embedding-3-small."""
+    """Embedding provider using OpenAI embeddings API."""
 
-    config = ProviderConfig(
-        model_name=OPENAI_MODEL,
-        dimensions=OPENAI_DIMENSIONS,
-        batch_size=100,
-    )
-
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, model_name: str = OPENAI_MODEL, dimensions: int = OPENAI_DIMENSIONS) -> None:
+        self._model_name = model_name
+        self.config = ProviderConfig(
+            model_name=model_name,
+            dimensions=dimensions,
+            batch_size=100,
+        )
         try:
             self._client = OpenAI(api_key=api_key)
         except Exception as e:
@@ -39,7 +39,7 @@ class OpenAIProvider:
             raise ValueError("texts must be non-empty")
         try:
             response = self._client.embeddings.create(
-                model=OPENAI_MODEL,
+                model=self._model_name,
                 input=texts,
             )
             return [item.embedding for item in response.data]

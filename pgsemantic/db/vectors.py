@@ -161,7 +161,8 @@ SQL_EXT_UPSERT_EMBEDDING = """
 # Count embedded rows in shadow table.
 SQL_EXT_COUNT_EMBEDDED = """
     SELECT COUNT(*) AS cnt
-    FROM {shadow_table};
+    FROM {shadow_table}
+    WHERE "embedding" IS NOT NULL;
 """
 
 # Semantic search via JOIN between source and shadow table.

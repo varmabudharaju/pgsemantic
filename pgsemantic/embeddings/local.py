@@ -18,15 +18,14 @@ logger = logging.getLogger(__name__)
 
 
 class LocalProvider:
-    """Embedding provider using sentence-transformers (all-MiniLM-L6-v2)."""
+    """Embedding provider using sentence-transformers."""
 
-    config = ProviderConfig(
-        model_name=DEFAULT_LOCAL_MODEL,
-        dimensions=DEFAULT_LOCAL_DIMENSIONS,
-        batch_size=32,
-    )
-
-    def __init__(self) -> None:
+    def __init__(self, model_name: str = DEFAULT_LOCAL_MODEL, dimensions: int = DEFAULT_LOCAL_DIMENSIONS) -> None:
+        self.config = ProviderConfig(
+            model_name=model_name,
+            dimensions=dimensions,
+            batch_size=32,
+        )
         import io
         import sys
 
@@ -40,7 +39,7 @@ class LocalProvider:
             from sentence_transformers import SentenceTransformer
 
             self._model: SentenceTransformer = SentenceTransformer(
-                DEFAULT_LOCAL_MODEL, trust_remote_code=False
+                model_name, trust_remote_code=False
             )
         except Exception as e:
             sys.stderr = original_stderr

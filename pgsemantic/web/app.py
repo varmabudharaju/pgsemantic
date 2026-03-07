@@ -682,10 +682,15 @@ async def index_table(req: IndexRequest):
         provider = get_provider(table_config.model, api_key=api_key)
 
         with get_connection(db_url) as conn:
-            total = count_total_with_content(
-                conn, req.table, table_config.column, table_config.schema,
-                source_columns=table_config.source_columns,
-            )
+            if table_config.storage_mode == "external" and table_config.shadow_table:
+                shadow_qualified = f'"{table_config.schema}"."{table_config.shadow_table}"' if table_config.schema else f'"{table_config.shadow_table}"'
+                row = conn.execute(f"SELECT COUNT(*) AS cnt FROM {shadow_qualified}").fetchone()
+                total = int(str(row["cnt"])) if row else 0
+            else:
+                total = count_total_with_content(
+                    conn, req.table, table_config.column, table_config.schema,
+                    source_columns=table_config.source_columns,
+                )
             already = count_embedded(
                 conn, req.table, table_config.schema,
                 storage_mode=table_config.storage_mode,
@@ -696,7 +701,9 @@ async def index_table(req: IndexRequest):
             if remaining <= 0:
                 return {
                     "success": True, "rows_embedded": 0, "total": total,
-                    "already_embedded": already, "message": "All rows already embedded",
+                    "final_embedded": already,
+                    "coverage": round(already / total * 100, 1) if total > 0 else 100.0,
+                    "message": "All rows already embedded",
                 }
 
             rows_embedded = 0
@@ -932,7 +939,12 @@ async def status_dashboard():
             for tc in config.tables:
                 try:
                     embedded = count_embedded(conn, tc.table, schema=tc.schema, storage_mode=tc.storage_mode, shadow_table=tc.shadow_table)
-                    total = count_total_with_content(conn, tc.table, tc.column, schema=tc.schema, source_columns=tc.source_columns)
+                    if tc.storage_mode == "external" and tc.shadow_table:
+                        shadow_qualified = f'"{tc.schema}"."{tc.shadow_table}"' if tc.schema else f'"{tc.shadow_table}"'
+                        row = conn.execute(f"SELECT COUNT(*) AS cnt FROM {shadow_qualified}").fetchone()
+                        total = int(str(row["cnt"])) if row else 0
+                    else:
+                        total = count_total_with_content(conn, tc.table, tc.column, schema=tc.schema, source_columns=tc.source_columns)
                     pending = count_pending(conn, tc.table)
                     failed = count_failed(conn, tc.table)
                     pct = round(embedded / total * 100, 1) if total > 0 else 0.0
@@ -943,11 +955,11 @@ async def status_dashboard():
                         "embedded": embedded, "total": total, "coverage_pct": pct,
                         "pending": pending, "failed": failed, "applied_at": tc.applied_at,
                     })
-                except Exception:
+                except Exception as table_err:
                     tables.append({
                         "table": tc.table, "columns": tc.source_columns,
                         "model": tc.model_name, "storage_mode": tc.storage_mode,
-                        "error": "Table missing or inaccessible",
+                        "error": str(table_err) or "Table missing or inaccessible",
                     })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

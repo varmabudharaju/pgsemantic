@@ -267,15 +267,15 @@ Press Ctrl+C to stop.
 
 Open `http://localhost:8080` in your browser. The UI gives you:
 
-- **Dashboard** — overview of configured tables, embedding stats, and a step-by-step setup wizard
-- **Search** — live semantic search with results as you type (300ms debounce)
+- **Dashboard** — overview of configured tables, embedding stats, start/stop worker, one-click search per table
+- **Search** — live semantic search with results as you type (300ms debounce), click any result to see full row details
 - **Table Browser** — explore all database tables, view columns/types, and preview sample data
 - **Inspect** — scan and score columns visually, one-click apply
-- **Index** — bulk embed with progress, re-index from scratch
-- **Status** — real-time embedding coverage with auto-refresh
+- **Apply** — pick a table from a dropdown (no need to type), select columns, choose an embedding model from visual model cards showing quality/speed/cost
+- **Index** — step-by-step checklist UI with live progress bar, cancel button, and built-in worker controls
+- **Status** — per-table progress cards with coverage bar, pending/failed counts, re-apply and remove actions
 - **Connection** — test and save database URLs from the browser
 - **MCP** — configure Claude Desktop integration, view config snippets
-- **Worker** — start/stop the background worker from the UI
 - **Command palette** — press `Cmd+K` (or `Ctrl+K`) for quick navigation
 
 ```bash
@@ -421,22 +421,32 @@ pgsemantic apply --table products --columns title,description --external
 
 ## Embedding Models
 
-| Model | Provider | Dimensions | Cost | API Key Required |
-|-------|----------|-----------|------|-----------------|
-| **all-MiniLM-L6-v2** (default) | Local (sentence-transformers) | 384 | Free | No |
-| **nomic-embed-text** | Ollama (local) | 768 | Free | No |
-| **text-embedding-3-small** | OpenAI | 1536 | $0.02/1M tokens | Yes |
+| Key | Model | Provider | Dimensions | Cost | Notes |
+|-----|-------|----------|-----------|------|-------|
+| `local` *(default)* | all-MiniLM-L6-v2 | sentence-transformers | 384 | Free | Fast, runs on-device, no API key |
+| `local-mpnet` | all-mpnet-base-v2 | sentence-transformers | 768 | Free | Better quality than MiniLM, still free |
+| `openai` | text-embedding-3-small | OpenAI API | 1536 | $0.02/1M tokens | Fast, great quality |
+| `openai-large` | text-embedding-3-large | OpenAI API | 3072 | $0.13/1M tokens | Best quality available |
+| `ollama` | nomic-embed-text | Ollama (self-hosted) | 768 | Free | Requires Ollama running locally |
 
 ```bash
 # Use default local model (no API key needed)
 pgsemantic apply --table products --column description
 
-# Use OpenAI (set OPENAI_API_KEY in .env first)
+# Use a better local model (free, higher quality)
+pgsemantic apply --table products --column description --model local-mpnet
+
+# Use OpenAI small (set OPENAI_API_KEY in .env first)
 pgsemantic apply --table products --column description --model openai
+
+# Use OpenAI large (best quality, higher cost)
+pgsemantic apply --table products --column description --model openai-large
 
 # Use Ollama (requires: ollama serve && ollama pull nomic-embed-text)
 pgsemantic apply --table products --column description --model ollama
 ```
+
+> **Tip:** The model you pick at `apply` time is locked in for that table. To switch models, run `pgsemantic apply` again (it will re-apply with the new model and you'll need to re-index).
 
 ---
 
@@ -535,7 +545,7 @@ When pgvector isn't installed, `pgsemantic apply` tries to install it automatica
 | `--table`, `-t` | required | Table to set up |
 | `--column`, `-c` | required* | Single text column to embed |
 | `--columns` | — | Comma-separated columns to embed together (e.g. `title,description`) |
-| `--model`, `-m` | `local` | `local`, `openai`, or `ollama` |
+| `--model`, `-m` | `local` | `local`, `local-mpnet`, `openai`, `openai-large`, or `ollama` |
 | `--external` | off | Store embeddings in a shadow table (don't modify source table) |
 | `--db`, `-d` | `DATABASE_URL` | Database connection string |
 | `--schema`, `-s` | `public` | Postgres schema |
