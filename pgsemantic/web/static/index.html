@@ -275,7 +275,7 @@
         .debug-detail { padding: 4px 16px 4px 80px; color: var(--fg-4); white-space: pre-wrap; background: var(--bg-code); border-bottom: 1px solid var(--border); font-size: 11px; }
 
         /* Worker badge */
-        .worker-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 500; }
+        .worker-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 600; }
         .worker-on { background: var(--green-light); color: var(--green-fg); }
 
         /* Empty state */
@@ -285,14 +285,15 @@
         .empty-state p { color: var(--fg-3); font-size: 13px; margin-bottom: 18px; max-width: 360px; margin-left: auto; margin-right: auto; line-height: 1.6; }
 
         /* Step indicator */
-        .checklist { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+        .checklist { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
         .cl-step { display: flex; gap: 16px; padding: 24px; border-bottom: 1px solid var(--border); }
-        .cl-num { width: 32px; height: 32px; min-width: 32px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 15px; display: flex; align-items: center; justify-content: center; margin-top: 2px; }
-        .cl-num.done { background: var(--green); }
-        .cl-num.active { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent); }
+        .cl-step:last-child { border-bottom: none; }
+        .cl-num { width: 30px; height: 30px; min-width: 30px; border-radius: 50%; background: var(--bg-3); color: var(--fg-3); font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; margin-top: 2px; border: 1px solid var(--border-strong); }
+        .cl-num.done { background: var(--green); color: #fff; border-color: var(--green); }
+        .cl-num.active { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 0 0 4px var(--ring); }
         .cl-body { flex: 1; min-width: 0; }
-        .cl-title { font-weight: 600; font-size: 15px; margin-bottom: 2px; }
-        .cl-desc { font-size: 13px; color: var(--fg-3); }
+        .cl-title { font-weight: 700; font-size: 14px; color: var(--fg-0); margin-bottom: 3px; }
+        .cl-desc { font-size: 13px; color: var(--fg-3); line-height: 1.6; }
         .step-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
         .step-icon { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; }
         .step-ok { color: var(--green); }
