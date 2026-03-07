@@ -162,8 +162,8 @@
         .check-label input { accent-color: var(--accent); width: 15px; height: 15px; }
 
         /* Badges */
-        .pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 99px; font-size: 12px; font-weight: 500; }
-        .pill-default { background: var(--bg-2); color: var(--fg-3); }
+        .pill { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+        .pill-default { background: var(--bg-3); color: var(--fg-3); }
         .pill-green { background: var(--green-light); color: var(--green-fg); }
         .pill-amber { background: var(--amber-light); color: var(--amber-fg); }
         .pill-red { background: var(--red-light); color: var(--red-fg); }
@@ -206,8 +206,8 @@
         .tag-local { background: color-mix(in srgb, var(--fg-3) 10%, transparent); color: var(--fg-3); }
 
         /* Progress */
-        .progress { width: 100%; height: 4px; background: var(--bg-3); border-radius: 99px; overflow: hidden; }
-        .progress-fill { height: 100%; background: var(--accent); border-radius: 99px; transition: width 0.4s ease; }
+        .progress { width: 100%; height: 5px; background: var(--bg-3); border-radius: 99px; overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--accent); border-radius: 99px; transition: width 0.5s ease; }
 
         /* Code block */
         .code-block { background: var(--bg-code); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; font-family: var(--mono); font-size: 12px; color: var(--fg-2); overflow-x: auto; white-space: pre-wrap; line-height: 1.6; }
@@ -244,21 +244,21 @@
         .chip:hover { border-color: var(--fg-4); color: var(--fg-1); }
 
         /* Wizard */
-        .wizard { background: var(--accent-light); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px 24px; margin-bottom: 24px; }
-        .wizard h3 { font-size: 14px; font-weight: 600; color: var(--fg-0); margin-bottom: 12px; }
+        .wizard { background: var(--accent-light); border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); border-radius: var(--radius-lg); padding: 20px 24px; margin-bottom: 24px; box-shadow: var(--shadow-sm); }
+        .wizard h3 { font-size: 13px; font-weight: 700; color: var(--fg-0); margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.05em; }
         .wiz-steps { display: flex; gap: 8px; }
-        .wiz-step { text-align: center; cursor: pointer; flex: 1; padding: 12px 8px; border-radius: var(--radius-md); transition: background var(--transition); }
-        .wiz-step:hover { background: var(--ring); }
-        .wiz-step .num { font-size: 18px; font-weight: 700; color: var(--fg-4); }
+        .wiz-step { text-align: center; cursor: pointer; flex: 1; padding: 12px 8px; border-radius: var(--radius-md); transition: background var(--transition); border: 1px solid transparent; }
+        .wiz-step:hover { background: var(--accent-subtle); border-color: var(--ring); }
+        .wiz-step .num { font-size: 20px; font-weight: 800; color: var(--fg-4); line-height: 1; }
         .wiz-step.done .num { color: var(--green); }
         .wiz-step.current .num { color: var(--accent); }
-        .wiz-step .step-label { font-size: 12px; color: var(--fg-3); margin-top: 4px; font-weight: 500; }
+        .wiz-step .step-label { font-size: 11px; color: var(--fg-3); margin-top: 5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 
         /* Toasts */
-        .toasts { position: fixed; top: 16px; right: 16px; z-index: 300; display: flex; flex-direction: column; gap: 6px; }
+        .toasts { position: fixed; top: 16px; right: 16px; z-index: 300; display: flex; flex-direction: column; gap: 8px; }
         .toast { padding: 10px 16px; border-radius: var(--radius-md); font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px; box-shadow: var(--shadow-lg); border: 1px solid var(--border); animation: slideDown 0.2s ease; max-width: 380px; }
-        .toast-ok { background: var(--bg-1); color: var(--green-fg); }
-        .toast-err { background: var(--bg-1); color: var(--red-fg); }
+        .toast-ok { background: var(--bg-1); color: var(--green-fg); border-color: var(--green-light); }
+        .toast-err { background: var(--bg-1); color: var(--red-fg); border-color: var(--red-light); }
 
         /* Debug panel */
         .debug { position: fixed; bottom: 0; left: 240px; right: 0; max-height: 260px; background: var(--bg-1); border-top: 1px solid var(--border); z-index: 80; display: flex; flex-direction: column; animation: slideUp 0.2s ease; }
@@ -279,10 +279,10 @@
         .worker-on { background: var(--green-light); color: var(--green-fg); }
 
         /* Empty state */
-        .empty-state { text-align: center; padding: 48px 24px; }
-        .empty-state-icon { font-size: 32px; margin-bottom: 12px; opacity: 0.25; }
-        .empty-state h3 { font-size: 15px; font-weight: 600; color: var(--fg-1); margin-bottom: 6px; }
-        .empty-state p { color: var(--fg-3); font-size: 13px; margin-bottom: 16px; max-width: 360px; margin-left: auto; margin-right: auto; }
+        .empty-state { text-align: center; padding: 52px 24px; }
+        .empty-state-icon { font-size: 28px; margin-bottom: 14px; opacity: 0.2; }
+        .empty-state h3 { font-size: 15px; font-weight: 700; color: var(--fg-1); margin-bottom: 6px; }
+        .empty-state p { color: var(--fg-3); font-size: 13px; margin-bottom: 18px; max-width: 360px; margin-left: auto; margin-right: auto; line-height: 1.6; }
 
         /* Step indicator */
         .checklist { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
