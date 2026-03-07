@@ -179,26 +179,31 @@
         .metric-label { font-size: 11px; font-weight: 700; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.07em; margin-top: 7px; }
 
         /* Search results */
-        .result { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 16px 20px; margin-bottom: 8px; background: var(--bg-1); transition: all var(--transition); cursor: pointer; }
-        .result:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); }
+        .result { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 8px; background: var(--bg-1); transition: all var(--transition); cursor: pointer; box-shadow: var(--shadow-xs); }
+        .result:hover { border-color: var(--accent); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+        .result:active { transform: translateY(0); }
+        .result-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+        .result-rank { font-size: 12px; font-weight: 700; font-family: var(--mono); color: var(--fg-1); display: flex; align-items: center; gap: 8px; }
+        .result-score-bar-wrap { width: 56px; height: 4px; background: var(--bg-3); border-radius: 99px; overflow: hidden; display: inline-block; vertical-align: middle; margin-left: 4px; }
+        .result-score-bar { height: 100%; border-radius: 99px; }
+        .result-meta { font-size: 12px; color: var(--fg-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
+        .result-body { color: var(--fg-3); font-size: 13px; line-height: 1.65; }
+        .score-high { color: var(--green); }
+        .score-mid { color: var(--amber); }
+        .score-low { color: var(--fg-4); }
         .model-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin-top: 4px; }
-        .model-card { border: 2px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; cursor: pointer; transition: border-color var(--transition), background var(--transition); }
-        .model-card:hover { border-color: var(--accent); }
-        .model-card.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-        .model-card-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+        .model-card { border: 2px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; cursor: pointer; transition: border-color var(--transition), background var(--transition), box-shadow var(--transition); }
+        .model-card:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); }
+        .model-card.selected { border-color: var(--accent); background: var(--accent-subtle); box-shadow: 0 0 0 3px var(--ring); }
+        .model-card-name { font-weight: 700; font-size: 13px; color: var(--fg-0); margin-bottom: 2px; }
         .model-card-sub { font-size: 11px; color: var(--fg-4); font-family: var(--mono); margin-bottom: 8px; }
         .model-card-tags { display: flex; gap: 4px; flex-wrap: wrap; }
-        .tag { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 99px; text-transform: uppercase; letter-spacing: .4px; }
-        .tag-free { background: color-mix(in srgb, var(--green) 15%, transparent); color: var(--green); }
-        .tag-paid { background: color-mix(in srgb, var(--amber) 15%, transparent); color: var(--amber); }
-        .tag-fast { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-        .tag-best { background: color-mix(in srgb, #a855f7 15%, transparent); color: #a855f7; }
-        .tag-local { background: color-mix(in srgb, var(--fg-3) 12%, transparent); color: var(--fg-3); }
-        .result-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-        .result-rank { font-size: 13px; font-weight: 600; font-family: var(--mono); }
-        .result-meta { font-size: 12px; color: var(--fg-4); }
-        .result-body { color: var(--fg-3); margin-top: 6px; font-size: 13px; line-height: 1.6; }
-        .score-high { color: var(--green); } .score-mid { color: var(--amber); } .score-low { color: var(--fg-4); }
+        .tag { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 99px; text-transform: uppercase; letter-spacing: 0.4px; }
+        .tag-free { background: color-mix(in srgb, var(--green) 12%, transparent); color: var(--green); }
+        .tag-paid { background: color-mix(in srgb, var(--amber) 12%, transparent); color: var(--amber); }
+        .tag-fast { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+        .tag-best { background: color-mix(in srgb, #a855f7 12%, transparent); color: #a855f7; }
+        .tag-local { background: color-mix(in srgb, var(--fg-3) 10%, transparent); color: var(--fg-3); }
 
         /* Progress */
         .progress { width: 100%; height: 4px; background: var(--bg-3); border-radius: 99px; overflow: hidden; }
@@ -570,7 +575,8 @@ function saveSearchHistory(t,q){if(!searchHistory[t])searchHistory[t]=[];searchH
 $('s-query')?.addEventListener?.('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{if($('s-query').value.trim().length>=3&&$('s-table').value)doSearch();},300);});
 $('s-table')?.addEventListener?.('change',loadSearchHistory);
 let _searchResults=[];
-async function doSearch(e){if(e)e.preventDefault();const table=$('s-table').value,query=$('s-query').value.trim(),limit=parseInt($('s-limit').value)||5;if(!table||!query)return;const ctrl=startOp('search');setBtn('btn-search',true,'search');$('s-results').classList.remove('hidden');$('s-output').innerHTML='<div class="loading"><span class="spin"></span>Searching...</div>';try{const d=await api('/api/search',{method:'POST',body:JSON.stringify({query,table,limit}),signal:ctrl.signal});saveSearchHistory(table,query);loadSearchHistory();$('s-title').textContent=`Results for "${query}"`;$('s-count').textContent=`${(d.results||[]).length} results`;if(!(d.results||[]).length){$('s-output').innerHTML='<div class="empty-state"><div class="empty-state-icon">&#128270;</div><h3>No results found</h3><p>Try different keywords or check that the table is indexed.</p></div>';return;}_searchResults=d.results;let h='';for(let i=0;i<d.results.length;i++){const r=d.results[i],sim=r.similarity||0;const sc=sim>=0.5?'score-high':sim>=0.3?'score-mid':'score-low';let meta=[];for(const[k,v]of Object.entries(r)){if(k==='similarity'||k==='content')continue;meta.push(`<span style="color:var(--fg-4)">${esc(k)}:</span> ${esc(String(v))}`);}h+=`<div class="result" onclick="openDrawer(buildRowDrawer(_searchResults[${i}]))" style="cursor:pointer"><div class="result-head"><span class="result-rank ${sc}">#${i+1} · ${sim.toFixed(4)}</span><span class="result-meta">${meta.join(' &nbsp; ')}</span></div><div class="result-body">${esc(r.content||'')}</div></div>`;}$('s-output').innerHTML=h;}catch(e){if(e.name==='AbortError')$('s-output').innerHTML='<p style="color:var(--fg-4)">Search cancelled.</p>';else{$('s-output').innerHTML=`<p style="color:var(--red)">${esc(e.message)}</p>`;toast(e.message,false);}}finally{finishOp('search');setBtn('btn-search',false,'search');}}
+async function doSearch(e){if(e)e.preventDefault();const table=$('s-table').value,query=$('s-query').value.trim(),limit=parseInt($('s-limit').value)||5;if(!table||!query)return;const ctrl=startOp('search');setBtn('btn-search',true,'search');$('s-results').classList.remove('hidden');$('s-output').innerHTML='<div class="loading"><span class="spin"></span>Searching...</div>';try{const d=await api('/api/search',{method:'POST',body:JSON.stringify({query,table,limit}),signal:ctrl.signal});saveSearchHistory(table,query);loadSearchHistory();$('s-title').textContent=`Results for "${query}"`;$('s-count').textContent=`${(d.results||[]).length} results`;if(!(d.results||[]).length){$('s-output').innerHTML='<div class="empty-state"><div class="empty-state-icon">&#128270;</div><h3>No results found</h3><p>Try different keywords or check that the table is indexed.</p></div>';return;}_searchResults=d.results;let h='';for(let i=0;i<d.results.length;i++){const r=d.results[i],sim=r.similarity||0;const sc=sim>=0.5?'score-high':sim>=0.3?'score-mid':'score-low';let meta=[];for(const[k,v]of Object.entries(r)){if(k==='similarity'||k==='content')continue;meta.push(`<span style="color:var(--fg-4)">${esc(k)}:</span> ${esc(String(v))}`);}const barColor=sim>=0.5?'var(--green)':sim>=0.3?'var(--amber)':'var(--fg-4)';const barWidth=Math.round(Math.min(sim,1)*100);
+h+=`<div class="result" onclick="openDrawer(buildRowDrawer(_searchResults[${i}]))"><div class="result-head"><span class="result-rank ${sc}">#${i+1}<span class="result-score-bar-wrap"><span class="result-score-bar" style="width:${barWidth}%;background:${barColor}"></span></span>${sim.toFixed(4)}</span><span class="result-meta">${meta.join(' &nbsp; ')}</span></div><div class="result-body">${esc(r.content||'')}</div></div>`;}$('s-output').innerHTML=h;}catch(e){if(e.name==='AbortError')$('s-output').innerHTML='<p style="color:var(--fg-4)">Search cancelled.</p>';else{$('s-output').innerHTML=`<p style="color:var(--red)">${esc(e.message)}</p>`;toast(e.message,false);}}finally{finishOp('search');setBtn('btn-search',false,'search');}}
 function buildRowDrawer(row){let h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h3>Row Details</h3><button class="btn btn-ghost btn-sm" onclick="closeDrawer()">&#10005;</button></div>';for(const[k,v]of Object.entries(row)){if(k==='similarity'){h+=`<div class="kv-row"><div class="kv-key">Similarity</div><div class="kv-val" style="font-weight:600;font-family:var(--mono)">${Number(v).toFixed(4)}</div></div>`;continue;}h+=`<div class="kv-row"><div class="kv-key">${esc(k)}</div><div class="kv-val">${esc(String(v||''))}</div></div>`;}return h;}
 
 // Inspect
