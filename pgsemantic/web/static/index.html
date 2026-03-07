@@ -150,16 +150,16 @@
 
         /* Forms */
         .field { margin-bottom: 16px; }
-        .label { display: block; font-size: 13px; font-weight: 500; color: var(--fg-1); margin-bottom: 6px; }
-        .input, .select { width: 100%; padding: 8px 12px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); color: var(--fg-1); font-size: 14px; font-family: var(--font); outline: none; transition: all var(--transition); }
-        .input:focus, .select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+        .label { display: block; font-size: 11px; font-weight: 700; color: var(--fg-3); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.07em; }
+        .input, .select { width: 100%; padding: 8px 12px; background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: var(--radius); color: var(--fg-1); font-size: 14px; font-family: var(--font); outline: none; transition: all var(--transition); box-shadow: inset 0 1px 2px rgba(0,0,0,0.04); }
+        .input:focus, .select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring), inset 0 1px 2px rgba(0,0,0,0.04); }
         .input::placeholder { color: var(--fg-4); }
         .input-lg { padding: 10px 14px; font-size: 15px; }
-        .select { appearance: none; background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23a1a1aa' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e"); background-position: right 8px center; background-repeat: no-repeat; background-size: 1.25em; padding-right: 2rem; }
+        .select { appearance: none; background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e"); background-position: right 8px center; background-repeat: no-repeat; background-size: 1.25em; padding-right: 2rem; cursor: pointer; }
         .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .field-hint { font-size: 12px; color: var(--fg-4); margin-top: 4px; }
+        .field-hint { font-size: 11px; color: var(--fg-4); margin-top: 5px; line-height: 1.5; }
         .check-label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: var(--fg-2); }
-        .check-label input { accent-color: var(--fg-0); width: 15px; height: 15px; }
+        .check-label input { accent-color: var(--accent); width: 15px; height: 15px; }
 
         /* Badges */
         .pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 99px; font-size: 12px; font-weight: 500; }
