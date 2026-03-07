@@ -62,11 +62,11 @@ def _build_trigger_function_sql(table: str, pk_columns: list[str]) -> str:
     For composite PKs: row_id = NEW.col1::TEXT || ',' || NEW.col2::TEXT
     """
     if len(pk_columns) == 1:
-        new_pk_expr = f"NEW.{pk_columns[0]}::TEXT"
-        old_pk_expr = f"OLD.{pk_columns[0]}::TEXT"
+        new_pk_expr = f'NEW."{pk_columns[0]}"::TEXT'
+        old_pk_expr = f'OLD."{pk_columns[0]}"::TEXT'
     else:
-        new_pk_expr = " || ',' || ".join(f"NEW.{col}::TEXT" for col in pk_columns)
-        old_pk_expr = " || ',' || ".join(f"OLD.{col}::TEXT" for col in pk_columns)
+        new_pk_expr = " || ',' || ".join(f'NEW."{col}"::TEXT' for col in pk_columns)
+        old_pk_expr = " || ',' || ".join(f'OLD."{col}"::TEXT' for col in pk_columns)
 
     fn_name = f"pgvector_setup_{table}_fn"
 
@@ -376,7 +376,8 @@ def apply_command(
             if is_multi:
                 # Multi-column trigger: fires on UPDATE OF col1, col2, ...
                 column_list = ", ".join(f'"{c}"' for c in source_columns)
-                column_arg = "+".join(source_columns)
+                # Escape single quotes in column names for the SQL string literal
+                column_arg = "+".join(c.replace("'", "''") for c in source_columns)
                 trigger_sql = SQL_CREATE_TRIGGER_MULTI.format(
                     schema=schema,
                     table=table,
@@ -385,7 +386,8 @@ def apply_command(
                 )
             else:
                 trigger_sql = SQL_CREATE_TRIGGER.format(
-                    schema=schema, table=table, column=primary_column
+                    schema=schema, table=table,
+                    column=primary_column.replace("'", "''"),
                 )
             conn.execute(trigger_sql)
             conn.commit()

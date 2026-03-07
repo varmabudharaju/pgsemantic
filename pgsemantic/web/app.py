@@ -169,7 +169,8 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data:; "
         "connect-src 'self'"
     )
@@ -178,7 +179,7 @@ async def security_headers_middleware(request: Request, call_next):
 
 # --- Pydantic Models ---
 
-_IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.]*$")
+_IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
 def _validate_identifier(v: str) -> str:
@@ -193,7 +194,7 @@ class ApplyRequest(BaseModel):
     table: str = Field(..., min_length=1, max_length=128)
     column: str = Field("", max_length=128)
     columns: str = Field("", max_length=512)
-    model: str = Field("local", pattern=r"^(local|openai|ollama)$")
+    model: str = Field("local", pattern=r"^(local|local-mpnet|openai|openai-large|ollama)$")
     external: bool = False
     schema_name: str = Field("public", max_length=128)
 
@@ -269,7 +270,7 @@ class BulkApplyItem(BaseModel):
 
 class BulkApplyRequest(BaseModel):
     items: list[BulkApplyItem] = Field(..., min_length=1, max_length=20)
-    model: str = Field("local", pattern=r"^(local|openai|ollama)$")
+    model: str = Field("local", pattern=r"^(local|local-mpnet|openai|openai-large|ollama)$")
     external: bool = False
 
 
@@ -351,13 +352,15 @@ async def save_connection(req: ConnectionTestRequest):
         # Write back
         lines = [f"{k}={v}" for k, v in existing.items()]
         env_path.write_text("\n".join(lines) + "\n")
+        env_path.chmod(0o600)
 
         # Update running process so new URL takes effect immediately
         os.environ["DATABASE_URL"] = req.database_url
 
         return {"success": True, "message": "DATABASE_URL saved to .env"}
     except Exception as e:
-        raise HTTPException(500, f"Failed to save .env: {e}")
+        logger.exception("save_connection failed")
+        raise HTTPException(500, "Failed to save connection. Check server logs.")
 
 
 @app.get("/api/connection/api-keys")
@@ -386,11 +389,13 @@ async def save_api_key(req: SaveApiKeyRequest):
         existing[req.key_name] = req.key_value
         lines = [f"{k}={v}" for k, v in existing.items()]
         env_path.write_text("\n".join(lines) + "\n")
+        env_path.chmod(0o600)
         os.environ[req.key_name] = req.key_value
 
         return {"success": True, "message": f"{req.key_name} saved to .env"}
     except Exception as e:
-        raise HTTPException(500, f"Failed to save .env: {e}")
+        logger.exception("save_api_key failed")
+        raise HTTPException(500, "Failed to save API key. Check server logs.")
 
 
 @app.get("/api/inspect")
@@ -419,7 +424,8 @@ async def inspect_db():
             ],
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("inspect_db failed")
+        raise HTTPException(status_code=500, detail="Inspection failed. Check server logs.")
 
 
 @app.get("/api/database/tables")
@@ -478,7 +484,8 @@ async def list_all_database_tables():
 
         return {"tables": result}
     except Exception as e:
-        raise HTTPException(500, str(e))
+        logger.exception("list_all_database_tables failed")
+        raise HTTPException(500, "Failed to list tables. Check server logs.")
 
 
 @app.get("/api/database/tables/{table_name}/sample")
@@ -511,7 +518,8 @@ async def sample_table_rows(table_name: str, schema: str = "public", limit: int 
 
         return {"table": table_name, "rows": cleaned}
     except Exception as e:
-        raise HTTPException(500, str(e))
+        logger.exception("sample_table_rows failed for %s", table_name)
+        raise HTTPException(500, "Failed to fetch sample rows. Check server logs.")
 
 
 @app.post("/api/apply")
@@ -678,7 +686,8 @@ async def apply_setup(req: ApplyRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("apply_setup failed for %s", req.table)
+        raise HTTPException(status_code=500, detail="Apply failed. Check server logs.")
 
 
 @app.post("/api/apply/bulk")
@@ -792,7 +801,8 @@ async def index_table(req: IndexRequest):
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("index_table failed for %s", req.table)
+        raise HTTPException(status_code=500, detail="Indexing failed. Check server logs.")
 
 
 @app.post("/api/reindex")
@@ -824,7 +834,8 @@ async def reindex_table(req: IndexRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, str(e))
+        logger.exception("reindex_table failed for %s", req.table)
+        raise HTTPException(500, "Reindex failed. Check server logs.")
 
 
 @app.post("/api/teardown")
@@ -843,9 +854,12 @@ async def teardown_table(req: TeardownRequest):
     removed = []
     try:
         with get_connection(db_url) as conn:
-            # Drop trigger
+            # Drop trigger (use config schema, not req.schema_name, to match what was created)
+            trigger_name = f"pgvector_setup_{table_config.table}_trigger"
+            fn_name = f"pgvector_setup_{table_config.table}_fn"
+            schema = table_config.schema or req.schema_name
             try:
-                conn.execute(f'DROP TRIGGER IF EXISTS pgvector_setup_{req.table}_trigger ON "{req.schema_name}"."{req.table}"')
+                conn.execute(f'DROP TRIGGER IF EXISTS "{trigger_name}" ON "{schema}"."{table_config.table}"')
                 conn.commit()
                 removed.append("trigger")
             except Exception:
@@ -853,7 +867,7 @@ async def teardown_table(req: TeardownRequest):
 
             # Drop trigger function
             try:
-                conn.execute(f"DROP FUNCTION IF EXISTS pgvector_setup_{req.table}_fn()")
+                conn.execute(f'DROP FUNCTION IF EXISTS "{fn_name}"()')
                 conn.commit()
                 removed.append("trigger_function")
             except Exception:
@@ -878,7 +892,7 @@ async def teardown_table(req: TeardownRequest):
                     conn.rollback()
             else:
                 try:
-                    conn.execute(f'ALTER TABLE "{req.schema_name}"."{req.table}" DROP COLUMN IF EXISTS "embedding"')
+                    conn.execute(f'ALTER TABLE "{schema}"."{table_config.table}" DROP COLUMN IF EXISTS "embedding"')
                     conn.commit()
                     removed.append("embedding_column")
                 except Exception:
@@ -886,7 +900,7 @@ async def teardown_table(req: TeardownRequest):
 
                 # Drop HNSW index
                 try:
-                    conn.execute(f'DROP INDEX IF EXISTS "idx_{req.table}_embedding_hnsw"')
+                    conn.execute(f'DROP INDEX IF EXISTS "idx_{table_config.table}_embedding_hnsw"')
                     conn.commit()
                     removed.append("hnsw_index")
                 except Exception:
@@ -913,7 +927,8 @@ async def teardown_table(req: TeardownRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, str(e))
+        logger.exception("teardown_table failed for %s", req.table)
+        raise HTTPException(500, "Teardown failed. Check server logs.")
 
 
 @app.post("/api/search")
@@ -959,7 +974,8 @@ async def search_table(req: SearchRequest):
         return {"query": req.query, "table": req.table, "results": cleaned}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("search_table failed for %s", req.table)
+        raise HTTPException(status_code=500, detail="Search failed. Check server logs.")
 
 
 @app.get("/api/status")
@@ -1000,7 +1016,8 @@ async def status_dashboard():
                         "error": str(table_err) or "Table missing or inaccessible",
                     })
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("status_dashboard failed")
+        raise HTTPException(status_code=500, detail="Status check failed. Check server logs.")
 
     return {"tables": tables}
 
@@ -1130,8 +1147,13 @@ async def mcp_configure(request: Request):
 
     if mode == "sse":
         # Point Claude Desktop at the embedded SSE endpoint
-        host = body.get("host", "localhost")
-        port = body.get("port", 8080)
+        host = str(body.get("host", "localhost"))
+        port = int(body.get("port", 8080))
+        # Validate host: alphanumeric, dots, hyphens only (no injection)
+        if not re.match(r"^[a-zA-Z0-9.\-]{1,253}$", host):
+            raise HTTPException(400, "Invalid host value")
+        if not (1 <= port <= 65535):
+            raise HTTPException(400, "Invalid port value")
         server_entry = {
             "url": f"http://{host}:{port}/mcp/sse",
         }
