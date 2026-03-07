@@ -89,7 +89,7 @@ def status_command(
                     )
                     continue
 
-                pct = (embedded / total) * 100 if total > 0 else 0.0
+                pct = min((embedded / total) * 100, 100.0) if total > 0 else 0.0
 
                 # Color the coverage based on percentage
                 if pct >= 100.0:
