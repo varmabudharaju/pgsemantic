@@ -33,6 +33,16 @@ OLLAMA_MODEL: str = "nomic-embed-text"
 OLLAMA_DIMENSIONS: int = 768
 OLLAMA_BASE_URL: str = "http://localhost:11434"
 
+# ── All supported models (provider_key -> (hf_model_name, dimensions)) ────
+LOCAL_MODEL_CONFIGS: dict[str, tuple[str, int]] = {
+    "local": ("all-MiniLM-L6-v2", 384),
+    "local-mpnet": ("all-mpnet-base-v2", 768),
+}
+OPENAI_MODEL_CONFIGS: dict[str, tuple[str, int]] = {
+    "openai": ("text-embedding-3-small", 1536),
+    "openai-large": ("text-embedding-3-large", 3072),
+}
+
 # ── Worker defaults ───────────────────────────────────────────────────────
 DEFAULT_WORKER_BATCH_SIZE: int = 10
 DEFAULT_WORKER_POLL_INTERVAL_MS: int = 500
