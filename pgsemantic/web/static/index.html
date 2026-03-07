@@ -170,10 +170,13 @@
         .pill-blue { background: var(--blue-light); color: var(--blue-fg); }
 
         /* Stats */
-        .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
-        .metric { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px; border-left: 3px solid var(--accent); }
-        .metric-value { font-size: 28px; font-weight: 700; color: var(--fg-0); letter-spacing: -0.03em; line-height: 1; }
-        .metric-label { font-size: 12px; font-weight: 500; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 6px; }
+        .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+        .metric { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px 20px; border-top: 3px solid var(--accent); box-shadow: var(--shadow-sm); }
+        .metric.metric-green { border-top-color: var(--green); }
+        .metric.metric-amber { border-top-color: var(--amber); }
+        .metric.metric-blue { border-top-color: var(--blue); }
+        .metric-value { font-size: 30px; font-weight: 700; color: var(--fg-0); letter-spacing: -0.04em; line-height: 1; }
+        .metric-label { font-size: 11px; font-weight: 700; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.07em; margin-top: 7px; }
 
         /* Search results */
         .result { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 16px 20px; margin-bottom: 8px; background: var(--bg-1); transition: all var(--transition); cursor: pointer; }
@@ -553,7 +556,7 @@ function openModal(h){$('modal-content').innerHTML=h;$('modal').classList.remove
 function closeModal(){$('modal').classList.add('hidden');}
 
 // Dashboard
-async function loadDashboard(){try{const[st,cn]=await Promise.all([api('/api/status'),api('/api/connection')]);const tables=st.tables||[];const emb=tables.reduce((s,t)=>s+(t.embedded||0),0);const tot=tables.reduce((s,t)=>s+(t.total||0),0);const pend=tables.reduce((s,t)=>s+(t.pending||0),0);$('d-stats').innerHTML=`<div class="metric"><div class="metric-value">${tables.length}</div><div class="metric-label">Tables</div></div><div class="metric"><div class="metric-value">${emb.toLocaleString()}</div><div class="metric-label">Embeddings</div></div><div class="metric"><div class="metric-value">${tot>0?Math.round(emb/tot*100):0}%</div><div class="metric-label">Coverage</div></div><div class="metric"><div class="metric-value">${pend}</div><div class="metric-label">Pending</div></div>`;
+async function loadDashboard(){try{const[st,cn]=await Promise.all([api('/api/status'),api('/api/connection')]);const tables=st.tables||[];const emb=tables.reduce((s,t)=>s+(t.embedded||0),0);const tot=tables.reduce((s,t)=>s+(t.total||0),0);const pend=tables.reduce((s,t)=>s+(t.pending||0),0);$('d-stats').innerHTML=`<div class="metric metric-blue"><div class="metric-value">${tables.length}</div><div class="metric-label">Tables</div></div><div class="metric"><div class="metric-value">${emb.toLocaleString()}</div><div class="metric-label">Embeddings</div></div><div class="metric metric-green"><div class="metric-value">${tot>0?Math.round(emb/tot*100):0}%</div><div class="metric-label">Coverage</div></div><div class="metric metric-amber"><div class="metric-value">${pend}</div><div class="metric-label">Pending</div></div>`;
 const hasConn=cn.connected,hasApply=tables.length>0,hasIndex=tables.some(t=>(t.coverage_pct||0)>0);if(!hasConn||!hasApply||!hasIndex){$('wizard-area').innerHTML=`<div class="wizard"><h3>Getting Started</h3><div class="wiz-steps"><div class="wiz-step ${hasConn?'done':'current'}" onclick="go('connection')"><div class="num">${hasConn?'&#10003;':'1'}</div><div class="step-label">Connect</div></div><div class="wiz-step ${hasApply?'done':hasConn?'current':''}" onclick="go('inspect')"><div class="num">${hasApply?'&#10003;':'2'}</div><div class="step-label">Inspect & Apply</div></div><div class="wiz-step ${hasIndex?'done':hasApply?'current':''}" onclick="go('index')"><div class="num">${hasIndex?'&#10003;':'3'}</div><div class="step-label">Index</div></div><div class="wiz-step ${hasIndex?'current':''}" onclick="go('search')"><div class="num">4</div><div class="step-label">Search</div></div></div></div>`;}else $('wizard-area').innerHTML='';
 try{const ws=await api('/api/worker/status');$('worker-indicator').innerHTML=ws.running?`<span class="worker-badge worker-on">&#9679; Worker running</span><button class="btn btn-danger btn-sm" style="margin-left:8px" onclick="stopWorker()">Stop Worker</button>`:`<button class="btn btn-success btn-sm" onclick="startWorker()">Start Worker</button>`;}catch(e){$('worker-indicator').innerHTML='';}
 if(!tables.length){$('d-tables').innerHTML=`<div class="card-body"><div class="empty-state"><div class="empty-state-icon">&#9634;</div><h3>No tables configured</h3><p>Scan your database to find columns suitable for semantic search.</p><button class="btn btn-primary" onclick="go('inspect')">Inspect Database</button></div></div>`;return;}
