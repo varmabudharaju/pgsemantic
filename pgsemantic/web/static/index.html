@@ -426,6 +426,13 @@
                     <button type="submit" class="btn btn-primary" id="btn-apply">Apply Setup</button>
                 </form>
             </div></div>
+            <div class="card"><div class="card-head"><h3>OpenAI API Key</h3></div><div class="card-body">
+                <div id="ak-status" style="margin-bottom:16px"><div class="loading"><span class="spin"></span></div></div>
+                <div class="field"><label class="label">OpenAI API Key</label><input class="input" id="ak-openai" type="password" placeholder="sk-..." maxlength="200" autocomplete="off"></div>
+                <div class="field-hint" style="margin-bottom:16px">Required for <strong>OpenAI Small</strong> and <strong>OpenAI Large</strong> above. Saved to your <code>.env</code> file — never exposed to the browser.</div>
+                <button class="btn btn-primary" onclick="saveApiKey()">Save API Key</button>
+                <div id="ak-result" style="margin-top:12px"></div>
+            </div></div>
             <div id="a-results" class="hidden"></div>
         </div>
 
@@ -497,13 +504,6 @@
             <div class="help-box">Connect to any PostgreSQL database with <strong>pgvector</strong>. Works with localhost, Docker, AWS RDS, Supabase, Neon — any PostgreSQL host. Format: <code>postgresql://user:pass@host:5432/db</code>. <strong>Test</strong> checks connectivity without saving. <strong>Save</strong> writes to your <code>.env</code> file.</div>
             <div class="card"><div class="card-head"><h3>Current Connection</h3></div><div class="card-body" id="cn-current"><div class="loading"><span class="spin"></span></div></div></div>
             <div class="card"><div class="card-head"><h3>New Connection</h3></div><div class="card-body"><div class="field"><label class="label">Database URL</label><input class="input" id="cn-url" placeholder="postgresql://user:pass@host:5432/dbname" maxlength="1000"></div><div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="testConn()">Test Connection</button><button class="btn btn-success" onclick="saveConn()">Save to .env</button></div><div id="cn-test" style="margin-top:12px"></div></div></div>
-            <div class="card"><div class="card-head"><h3>API Keys</h3></div><div class="card-body">
-                <div id="ak-status" style="margin-bottom:20px"><div class="loading"><span class="spin"></span></div></div>
-                <div class="field"><label class="label">OpenAI API Key</label><input class="input" id="ak-openai" type="password" placeholder="sk-..." maxlength="200" autocomplete="off"></div>
-                <div class="field-hint" style="margin-bottom:16px">Required for <strong>OpenAI Small</strong> and <strong>OpenAI Large</strong> embedding models. Saved to your <code>.env</code> file — never exposed to the browser.</div>
-                <button class="btn btn-primary" onclick="saveApiKey()">Save API Key</button>
-                <div id="ak-result" style="margin-top:12px"></div>
-            </div></div>
         </div>
     </div></main>
 </div>
@@ -548,7 +548,7 @@ function applyTheme(t){document.documentElement.setAttribute('data-theme',t);$('
 function toggleTheme(){const t=getTheme()==='dark'?'light':'dark';localStorage.setItem('pgs_theme',t);applyTheme(t);}
 
 // Nav
-function go(p){curPage=p;document.querySelectorAll('.page').forEach(el=>el.classList.add('hidden'));$(`p-${p}`).classList.remove('hidden');document.querySelectorAll('.sb-item').forEach(n=>n.classList.remove('active'));const nb=document.querySelector(`.sb-item[data-p="${p}"]`);if(nb)nb.classList.add('active');if(p==='dashboard')loadDashboard();if(p==='search'){loadTableSels();loadSearchHistory();}if(p==='index'){loadTableSels();loadIndexWorker();}if(p==='apply')loadApplyTables();if(p==='status')loadStatus();if(p==='browse')loadBrowse();if(p==='connection'){loadConnInfo();loadApiKeys();}if(p==='mcp')loadMcp();}
+function go(p){curPage=p;document.querySelectorAll('.page').forEach(el=>el.classList.add('hidden'));$(`p-${p}`).classList.remove('hidden');document.querySelectorAll('.sb-item').forEach(n=>n.classList.remove('active'));const nb=document.querySelector(`.sb-item[data-p="${p}"]`);if(nb)nb.classList.add('active');if(p==='dashboard')loadDashboard();if(p==='search'){loadTableSels();loadSearchHistory();}if(p==='index'){loadTableSels();loadIndexWorker();}if(p==='apply'){loadApplyTables();loadApiKeys();}if(p==='status')loadStatus();if(p==='browse')loadBrowse();if(p==='connection')loadConnInfo();if(p==='mcp')loadMcp();}
 
 // Init
 async function init(){applyTheme(getTheme());try{csrf=(await api('/api/csrf-token')).token;}catch(e){toast('Init failed: '+e.message,false);}checkConn();go('connection');document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();openPalette();}if(e.key==='Escape'){closePalette();closeDrawer();closeModal();}});}
