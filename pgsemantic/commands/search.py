@@ -1,9 +1,13 @@
 """pgsemantic search — semantic search from the command line."""
 from __future__ import annotations
 
+import csv
+import json
+import sys
+from typing import Any
+
 import typer
 from rich.console import Console
-from rich.panel import Panel
 
 from pgsemantic.config import load_project_config, load_settings
 from pgsemantic.db.client import get_connection
@@ -13,7 +17,28 @@ from pgsemantic.embeddings import get_provider
 console = Console()
 
 # Columns to hide from search results (internal/large)
-_HIDDEN_COLUMNS = frozenset({"embedding", "similarity", "content"})
+_TABLE_HIDDEN_COLUMNS = frozenset({"embedding", "similarity", "content"})
+
+
+def _results_to_csv(results: list[dict[str, Any]]) -> None:
+    """Write results as CSV to stdout."""
+    if not results:
+        return
+    writer = csv.DictWriter(sys.stdout, fieldnames=list(results[0].keys()))
+    writer.writeheader()
+    for row in results:
+        writer.writerow({k: str(v) if v is not None else "" for k, v in row.items()})
+
+
+def _results_to_json(results: list[dict[str, Any]]) -> None:
+    """Write results as a JSON array to stdout."""
+    print(json.dumps(results, indent=2, default=str))
+
+
+def _results_to_jsonl(results: list[dict[str, Any]]) -> None:
+    """Write results as newline-delimited JSON to stdout."""
+    for row in results:
+        print(json.dumps(row, default=str))
 
 
 def search_command(
@@ -39,8 +64,18 @@ def search_command(
         "-d",
         help="Database URL (overrides DATABASE_URL env var).",
     ),
+    fmt: str = typer.Option(
+        "table",
+        "--format",
+        "-f",
+        help="Output format: table (default), csv, json, jsonl.",
+    ),
 ) -> None:
     """Search your database using natural language."""
+    if fmt not in ("table", "csv", "json", "jsonl"):
+        console.print("[red]--format must be one of: table, csv, json, jsonl[/red]")
+        raise typer.Exit(code=1)
+
     settings = load_settings()
     database_url = db if db else settings.database_url
 
@@ -88,9 +123,25 @@ def search_command(
             )
 
         if not results:
-            console.print("\n[yellow]No results found.[/yellow]\n")
-            raise typer.Exit(code=0)
+            if fmt == "table":
+                console.print("\n[yellow]No results found.[/yellow]\n")
+            elif fmt == "json":
+                print("[]")
+            # csv and jsonl: empty output is correct
+            raise typer.Exit(code=0)  # re-raised by outer except typer.Exit guard
 
+        # --- machine-readable output ---
+        if fmt == "csv":
+            _results_to_csv(results)
+            return
+        if fmt == "json":
+            _results_to_json(results)
+            return
+        if fmt == "jsonl":
+            _results_to_jsonl(results)
+            return
+
+        # --- default: Rich table output ---
         console.print()
         console.print(
             f"[dim]Results for:[/dim] [cyan]\"{query}\"[/cyan] "
@@ -101,15 +152,13 @@ def search_command(
             sim = float(str(row["similarity"]))
             score_color = "green" if sim >= 0.5 else "yellow" if sim >= 0.3 else "dim"
 
-            # Build metadata line from non-hidden, non-content columns
             meta_parts: list[str] = []
             for key, val in row.items():
-                if key in _HIDDEN_COLUMNS or key == column:
+                if key in _TABLE_HIDDEN_COLUMNS or key == column:
                     continue
                 meta_parts.append(f"[dim]{key}:[/dim] {val}")
             meta_line = "  ".join(meta_parts)
 
-            # Truncate content for preview
             content = str(row.get(column, ""))
             if len(content) > 300:
                 content = content[:300] + "..."
