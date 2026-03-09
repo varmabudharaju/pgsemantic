@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pgsemantic"
-version = "0.2.0"
+version = "0.3.0"
 description = "Zero-config semantic search bootstrap for any PostgreSQL database"
 readme = "README.md"
 license = "MIT"
