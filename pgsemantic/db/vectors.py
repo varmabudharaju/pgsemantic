@@ -625,6 +625,9 @@ def search_similar(
         quoted_col = _quoted(column)
         sql = SQL_SEARCH_SIMILAR.format(table=qualified, column=quoted_col)
 
+    # ef_search must be >= limit or HNSW returns fewer results than requested.
+    ef_search = max(limit * 2, 100)
+    conn.execute(f"SET hnsw.ef_search = {ef_search}")
     result = conn.execute(
         sql, {"query_vector": query_vector, "limit": limit}
     ).fetchall()

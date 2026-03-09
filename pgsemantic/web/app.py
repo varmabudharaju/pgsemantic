@@ -719,7 +719,7 @@ async def bulk_apply(req: BulkApplyRequest):
 
 
 @app.post("/api/index")
-async def index_table(req: IndexRequest):
+def index_table(req: IndexRequest):
     """Bulk embed existing rows."""
     db_url = _get_db_url()
     settings = load_settings()
@@ -737,15 +737,10 @@ async def index_table(req: IndexRequest):
         provider = get_provider(table_config.model, api_key=api_key)
 
         with get_connection(db_url) as conn:
-            if table_config.storage_mode == "external" and table_config.shadow_table:
-                shadow_qualified = f'"{table_config.schema}"."{table_config.shadow_table}"' if table_config.schema else f'"{table_config.shadow_table}"'
-                row = conn.execute(f"SELECT COUNT(*) AS cnt FROM {shadow_qualified}").fetchone()
-                total = int(str(row["cnt"])) if row else 0
-            else:
-                total = count_total_with_content(
-                    conn, req.table, table_config.column, table_config.schema,
-                    source_columns=table_config.source_columns,
-                )
+            total = count_total_with_content(
+                conn, req.table, table_config.column, table_config.schema,
+                source_columns=table_config.source_columns,
+            )
             already = count_embedded(
                 conn, req.table, table_config.schema,
                 storage_mode=table_config.storage_mode,
@@ -814,7 +809,7 @@ async def index_table(req: IndexRequest):
 
 
 @app.post("/api/reindex")
-async def reindex_table(req: IndexRequest):
+def reindex_table(req: IndexRequest):
     """Re-embed a table by nulling existing embeddings then re-indexing."""
     db_url = _get_db_url()
 
@@ -837,7 +832,7 @@ async def reindex_table(req: IndexRequest):
             conn.commit()
 
         # Now run normal index
-        return await index_table(req)
+        return index_table(req)
 
     except HTTPException:
         raise
@@ -1001,12 +996,7 @@ async def status_dashboard():
             for tc in config.tables:
                 try:
                     embedded = count_embedded(conn, tc.table, schema=tc.schema, storage_mode=tc.storage_mode, shadow_table=tc.shadow_table)
-                    if tc.storage_mode == "external" and tc.shadow_table:
-                        shadow_qualified = f'"{tc.schema}"."{tc.shadow_table}"' if tc.schema else f'"{tc.shadow_table}"'
-                        row = conn.execute(f"SELECT COUNT(*) AS cnt FROM {shadow_qualified}").fetchone()
-                        total = int(str(row["cnt"])) if row else 0
-                    else:
-                        total = count_total_with_content(conn, tc.table, tc.column, schema=tc.schema, source_columns=tc.source_columns)
+                    total = count_total_with_content(conn, tc.table, tc.column, schema=tc.schema, source_columns=tc.source_columns)
                     pending = count_pending(conn, tc.table)
                     failed = count_failed(conn, tc.table)
                     pct = min(round(embedded / total * 100, 1), 100.0) if total > 0 else 0.0
