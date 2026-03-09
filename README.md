@@ -18,7 +18,7 @@ We loaded 5,980 real clinical trials from ClinicalTrials.gov and searched them i
 
 **Browse your existing tables — no setup required**
 
-<img src="docs/screenshots/01-tables.png" width="900" alt="Table Browser showing clinical_trials and news_articles tables with row counts"/>
+<img src="docs/screenshots/01-tables.png" width="100%"alt="Table Browser showing clinical_trials and news_articles tables with row counts"/>
 
 *pgsemantic connects to your existing database and shows every table. Nothing is modified until you say so.*
 
@@ -26,7 +26,7 @@ We loaded 5,980 real clinical trials from ClinicalTrials.gov and searched them i
 
 **Inspect scores your text columns for semantic search suitability**
 
-<img src="docs/screenshots/02-inspect.png" width="900" alt="Inspect page scoring clinical_trials columns — eligibility and brief_summary rated 3 stars"/>
+<img src="docs/screenshots/02-inspect.png" width="100%"alt="Inspect page scoring clinical_trials columns — eligibility and brief_summary rated 3 stars"/>
 
 *Columns are ranked by average text length and content quality. `brief_summary` and `eligibility` score highest — these are the best candidates for embedding.*
 
@@ -34,7 +34,7 @@ We loaded 5,980 real clinical trials from ClinicalTrials.gov and searched them i
 
 **Apply sets up everything with one click**
 
-<img src="docs/screenshots/03-apply.png" width="900" alt="Apply page with column picker checkboxes and embedding model selection"/>
+<img src="docs/screenshots/03-apply.png" width="100%"alt="Apply page with column picker checkboxes and embedding model selection"/>
 
 *Pick your columns, choose an embedding model (local runs free on your machine, no API key), click Apply Setup. pgsemantic adds a vector column, HNSW index, and a change-tracking trigger.*
 
@@ -42,7 +42,7 @@ We loaded 5,980 real clinical trials from ClinicalTrials.gov and searched them i
 
 **Dashboard shows your embedding coverage**
 
-<img src="docs/screenshots/04-dashboard.png" width="900" alt="Dashboard showing 5,980 embeddings, 100% coverage, 0 pending"/>
+<img src="docs/screenshots/04-dashboard.png" width="100%"alt="Dashboard showing 5,980 embeddings, 100% coverage, 0 pending"/>
 
 *5,980 rows. 100% coverage. 0 pending. Every clinical trial is now searchable by meaning.*
 
@@ -50,7 +50,7 @@ We loaded 5,980 real clinical trials from ClinicalTrials.gov and searched them i
 
 **Search in plain English — results that share zero words with your query**
 
-<img src="docs/screenshots/05-search.png" width="900" alt="Search results for 'kidney complications in diabetics' returning trials about diabetic nephropathy and DKD"/>
+<img src="docs/screenshots/05-search.png" width="100%"alt="Search results for 'kidney complications in diabetics' returning trials about diabetic nephropathy and DKD"/>
 
 *Query: `kidney complications in diabetics`*
 
