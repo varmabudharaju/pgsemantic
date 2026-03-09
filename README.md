@@ -12,6 +12,58 @@ It works on your existing tables, keeps embeddings in sync automatically as rows
 
 ---
 
+## See it in action
+
+We loaded 5,980 real clinical trials from ClinicalTrials.gov and searched them in plain English. Here's what the full flow looks like.
+
+**Browse your existing tables — no setup required**
+
+<img src="docs/screenshots/01-tables.png" width="900" alt="Table Browser showing clinical_trials and news_articles tables with row counts"/>
+
+*pgsemantic connects to your existing database and shows every table. Nothing is modified until you say so.*
+
+---
+
+**Inspect scores your text columns for semantic search suitability**
+
+<img src="docs/screenshots/02-inspect.png" width="900" alt="Inspect page scoring clinical_trials columns — eligibility and brief_summary rated 3 stars"/>
+
+*Columns are ranked by average text length and content quality. `brief_summary` and `eligibility` score highest — these are the best candidates for embedding.*
+
+---
+
+**Apply sets up everything with one click**
+
+<img src="docs/screenshots/03-apply.png" width="900" alt="Apply page with column picker checkboxes and embedding model selection"/>
+
+*Pick your columns, choose an embedding model (local runs free on your machine, no API key), click Apply Setup. pgsemantic adds a vector column, HNSW index, and a change-tracking trigger.*
+
+---
+
+**Dashboard shows your embedding coverage**
+
+<img src="docs/screenshots/04-dashboard.png" width="900" alt="Dashboard showing 5,980 embeddings, 100% coverage, 0 pending"/>
+
+*5,980 rows. 100% coverage. 0 pending. Every clinical trial is now searchable by meaning.*
+
+---
+
+**Search in plain English — results that share zero words with your query**
+
+<img src="docs/screenshots/05-search.png" width="900" alt="Search results for 'kidney complications in diabetics' returning trials about diabetic nephropathy and DKD"/>
+
+*Query: `kidney complications in diabetics`*
+
+*Top results: trials about **diabetic nephropathy**, **DKD**, **renal insufficiency** — none of which contain the words "kidney complications in diabetics". That's semantic search.*
+
+Results export to CSV or JSON directly from the UI, or from the CLI:
+
+```bash
+pgsemantic search "cardiovascular risk factors" --table clinical_trials --format csv > results.csv
+```
+
+---
+
 ## What is semantic search?
 
 Traditional SQL search finds rows where a column contains the exact words you typed. Semantic search understands *meaning* — it finds results that are conceptually similar even when they share no words with your query.
