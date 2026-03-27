@@ -274,6 +274,16 @@ class BulkApplyRequest(BaseModel):
     external: bool = False
 
 
+class RetryRequest(BaseModel):
+    table: str = Field("", max_length=128)
+    all_tables: bool = False
+
+    @field_validator("table")
+    @classmethod
+    def validate_ident(cls, v: str) -> str:
+        return _validate_identifier(v) if v else v
+
+
 # --- Routes ---
 
 
@@ -1018,6 +1028,25 @@ async def status_dashboard():
         raise HTTPException(status_code=500, detail="Status check failed. Check server logs.")
 
     return {"tables": tables}
+
+
+@app.post("/api/retry")
+async def retry_failed(req: RetryRequest):
+    """Retry failed embedding jobs."""
+    from pgsemantic.db.queue import retry_failed_jobs
+
+    if not req.table and not req.all_tables:
+        raise HTTPException(400, "Specify table or set all_tables=true")
+
+    db_url = _get_db_url()
+    try:
+        with get_connection(db_url) as conn:
+            table_name = req.table if req.table else None
+            count = retry_failed_jobs(conn, table_name=table_name)
+        return {"retried": count, "table": req.table or "all"}
+    except Exception as e:
+        logger.exception("retry_failed failed")
+        raise HTTPException(500, "Retry failed. Check server logs.")
 
 
 @app.get("/api/tables")
