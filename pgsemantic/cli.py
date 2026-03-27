@@ -41,6 +41,7 @@ from pgsemantic.commands.search import search_command  # noqa: E402
 from pgsemantic.commands.serve import serve_command  # noqa: E402
 from pgsemantic.commands.status import status_command  # noqa: E402
 from pgsemantic.commands.ui import ui_command  # noqa: E402
+from pgsemantic.commands.retry import retry_command  # noqa: E402
 from pgsemantic.commands.worker import worker_command  # noqa: E402
 
 app.command(name="inspect")(inspect_command)
@@ -52,3 +53,4 @@ app.command(name="serve")(serve_command)
 app.command(name="status")(status_command)
 app.command(name="integrate")(integrate_command)
 app.command(name="ui")(ui_command)
+app.command(name="retry")(retry_command)
