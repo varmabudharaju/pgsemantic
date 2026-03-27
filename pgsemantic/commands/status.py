@@ -149,10 +149,7 @@ def status_command(
             now = datetime.now(tz=timezone.utc)
             for w in workers:
                 last_hb = w["last_heartbeat"]
-                if hasattr(last_hb, "timestamp"):
-                    age_s = (now - last_hb).total_seconds()
-                else:
-                    age_s = 999
+                age_s = (now - last_hb).total_seconds() if hasattr(last_hb, "timestamp") else 999
 
                 if age_s < 30:
                     status_str = "[green]Running[/green]"

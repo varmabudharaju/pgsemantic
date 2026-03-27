@@ -6,6 +6,7 @@ exponential backoff on connection errors.
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import platform
@@ -111,10 +112,8 @@ def run_worker(settings: Settings) -> None:
                     now = time.time()
                     if now - last_heartbeat >= WORKER_HEARTBEAT_INTERVAL_S:
                         logger.info("Worker alive, queue empty.")
-                        try:
+                        with contextlib.suppress(Exception):
                             upsert_worker_heartbeat(conn, worker_id, jobs_processed)
-                        except Exception:
-                            pass
                         last_heartbeat = now
                     time.sleep(poll_interval_s)
                     backoff_s = 1.0  # Reset backoff on successful connection
@@ -131,10 +130,8 @@ def run_worker(settings: Settings) -> None:
                     jobs_processed += 1
 
                 # Heartbeat after processing batch
-                try:
+                with contextlib.suppress(Exception):
                     upsert_worker_heartbeat(conn, worker_id, jobs_processed)
-                except Exception:
-                    pass  # Non-critical
 
         except psycopg.OperationalError as e:
             logger.warning(
