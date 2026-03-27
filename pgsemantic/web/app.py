@@ -1044,6 +1044,8 @@ async def retry_failed(req: RetryRequest):
             table_name = req.table if req.table else None
             count = retry_failed_jobs(conn, table_name=table_name)
         return {"retried": count, "table": req.table or "all"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("retry_failed failed")
         raise HTTPException(500, "Retry failed. Check server logs.")
