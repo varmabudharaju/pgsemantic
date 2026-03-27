@@ -105,6 +105,21 @@ SQL_COUNT_FAILED = """
       AND status = 'failed';
 """
 
+# Reset failed jobs to pending for a specific table so the worker retries them.
+SQL_RETRY_FAILED_FOR_TABLE = """
+    UPDATE pgvector_setup_queue
+    SET status = 'pending', retries = 0, error_msg = NULL, updated_at = NOW()
+    WHERE status = 'failed'
+      AND table_name = %(table_name)s;
+"""
+
+# Reset ALL failed jobs to pending (across every table).
+SQL_RETRY_FAILED_ALL = """
+    UPDATE pgvector_setup_queue
+    SET status = 'pending', retries = 0, error_msg = NULL, updated_at = NOW()
+    WHERE status = 'failed';
+"""
+
 
 # -- Functions --------------------------------------------------------------
 
@@ -208,3 +223,15 @@ def count_failed(conn: DictConnection, table_name: str) -> int:
     if result is None:
         return 0
     return int(str(result["cnt"]))
+
+
+def retry_failed_jobs(conn: DictConnection, table_name: str | None = None) -> int:
+    """Reset failed jobs to pending for retry. Returns count of jobs retried."""
+    if table_name is not None:
+        result = conn.execute(SQL_RETRY_FAILED_FOR_TABLE, {"table_name": table_name})
+    else:
+        result = conn.execute(SQL_RETRY_FAILED_ALL)
+    conn.commit()
+    count = result.rowcount
+    logger.info("Retried %d failed jobs%s", count, f" for {table_name}" if table_name else "")
+    return count

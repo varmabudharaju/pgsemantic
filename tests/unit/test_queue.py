@@ -9,6 +9,7 @@ from pgsemantic.db.queue import (
     create_queue_table,
     fail_job,
 )
+from pgsemantic.db.queue import retry_failed_jobs
 
 
 class TestCreateQueueTable:
@@ -117,4 +118,30 @@ class TestCountFailed:
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchone.return_value = None
         result = count_failed(mock_conn, table_name="products")
+        assert result == 0
+
+
+class TestRetryFailedJobs:
+    def test_retries_for_specific_table(self) -> None:
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.rowcount = 5
+        result = retry_failed_jobs(mock_conn, table_name="products")
+        assert result == 5
+        mock_conn.commit.assert_called_once()
+        sql = mock_conn.execute.call_args[0][0]
+        assert "status = 'pending'" in sql
+        assert "table_name = %(table_name)s" in sql
+
+    def test_retries_all_tables(self) -> None:
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.rowcount = 12
+        result = retry_failed_jobs(mock_conn, table_name=None)
+        assert result == 12
+        sql = mock_conn.execute.call_args[0][0]
+        assert "table_name" not in sql
+
+    def test_returns_zero_when_no_failed_jobs(self) -> None:
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.rowcount = 0
+        result = retry_failed_jobs(mock_conn, table_name="products")
         assert result == 0
