@@ -32,6 +32,14 @@ def retry_command(
     ),
 ) -> None:
     """Retry failed embedding jobs."""
+    if table and all_tables:
+        console.print(Panel(
+            "[red]--table and --all are mutually exclusive.[/red]",
+            title="Invalid Options",
+            border_style="red",
+        ))
+        raise typer.Exit(code=1)
+
     if not table and not all_tables:
         console.print(Panel(
             "[red]Specify --table <name> or --all.[/red]",
