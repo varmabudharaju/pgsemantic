@@ -8,8 +8,8 @@ from pgsemantic.db.queue import (
     count_pending,
     create_queue_table,
     fail_job,
+    retry_failed_jobs,
 )
-from pgsemantic.db.queue import retry_failed_jobs
 
 
 class TestCreateQueueTable:
