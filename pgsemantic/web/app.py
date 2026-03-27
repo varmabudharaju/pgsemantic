@@ -1084,6 +1084,47 @@ async def worker_status():
     return {"running": False, "pid": None}
 
 
+@app.get("/api/worker-health")
+async def worker_health():
+    """Get worker health from the database health table."""
+    from pgsemantic.db.queue import get_worker_health
+    from datetime import datetime, timezone
+
+    db_url = _get_db_url()
+    try:
+        with get_connection(db_url) as conn:
+            workers = get_worker_health(conn)
+
+        now = datetime.now(tz=timezone.utc)
+        result = []
+        for w in workers:
+            last_hb = w["last_heartbeat"]
+            if hasattr(last_hb, "timestamp"):
+                age_s = (now - last_hb).total_seconds()
+            else:
+                age_s = 999
+
+            if age_s < 30:
+                status = "running"
+            elif age_s < 300:
+                status = "stale"
+            else:
+                status = "stopped"
+
+            result.append({
+                "worker_id": str(w["worker_id"]),
+                "status": status,
+                "last_heartbeat": str(w["last_heartbeat"]),
+                "jobs_processed": w["jobs_processed"],
+                "started_at": str(w.get("started_at")),
+                "age_seconds": round(age_s, 1),
+            })
+
+        return {"workers": result}
+    except Exception:
+        return {"workers": []}
+
+
 def _run_worker_process():
     """Target function for the worker subprocess."""
     from pgsemantic.config import load_settings

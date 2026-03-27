@@ -12,7 +12,7 @@ from rich.table import Table
 
 from pgsemantic.config import load_project_config, load_settings
 from pgsemantic.db.client import get_connection
-from pgsemantic.db.queue import count_failed, count_pending
+from pgsemantic.db.queue import count_failed, count_pending, get_worker_health
 from pgsemantic.db.vectors import count_embedded, count_total_with_content
 
 console = Console()
@@ -129,3 +129,58 @@ def status_command(
         raise typer.Exit(code=1) from e
 
     console.print(table)
+
+    # Worker health section
+    try:
+        with get_connection(db_url) as conn:
+            workers = get_worker_health(conn)
+
+        if workers:
+            from datetime import datetime, timezone
+
+            console.print()
+            worker_table = Table(title="Worker Health", show_lines=True)
+            worker_table.add_column("Worker ID", style="cyan")
+            worker_table.add_column("Status")
+            worker_table.add_column("Last Seen", style="dim")
+            worker_table.add_column("Jobs Processed", justify="right")
+            worker_table.add_column("Uptime", style="dim")
+
+            now = datetime.now(tz=timezone.utc)
+            for w in workers:
+                last_hb = w["last_heartbeat"]
+                if hasattr(last_hb, "timestamp"):
+                    age_s = (now - last_hb).total_seconds()
+                else:
+                    age_s = 999
+
+                if age_s < 30:
+                    status_str = "[green]Running[/green]"
+                elif age_s < 300:
+                    status_str = "[yellow]Stale[/yellow]"
+                else:
+                    status_str = "[red]Not running[/red]"
+
+                last_seen = str(w["last_heartbeat"])[:19] if w["last_heartbeat"] else "—"
+                started = w.get("started_at")
+                if started and hasattr(started, "timestamp"):
+                    uptime_s = (now - started).total_seconds()
+                    hours, remainder = divmod(int(uptime_s), 3600)
+                    minutes, _ = divmod(remainder, 60)
+                    uptime_str = f"{hours}h {minutes}m"
+                else:
+                    uptime_str = "—"
+
+                worker_table.add_row(
+                    str(w["worker_id"]),
+                    status_str,
+                    last_seen,
+                    str(w["jobs_processed"]),
+                    uptime_str,
+                )
+
+            console.print(worker_table)
+        else:
+            console.print("\n[dim]No worker health data. Start a worker with: pgsemantic worker[/dim]")
+    except Exception:
+        pass  # Worker health is supplementary, don't fail status
