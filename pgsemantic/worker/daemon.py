@@ -7,6 +7,8 @@ exponential backoff on connection errors.
 from __future__ import annotations
 
 import logging
+import os
+import platform
 import signal
 import time
 from types import FrameType
@@ -21,7 +23,14 @@ from pgsemantic.config import (
     load_project_config,
 )
 from pgsemantic.db.client import get_connection
-from pgsemantic.db.queue import claim_batch, complete_job, fail_job
+from pgsemantic.db.queue import (
+    claim_batch,
+    complete_job,
+    create_worker_health_table,
+    delete_worker_health,
+    fail_job,
+    upsert_worker_heartbeat,
+)
 from pgsemantic.db.vectors import fetch_row_text, null_embedding, update_embedding
 from pgsemantic.embeddings import get_provider
 from pgsemantic.embeddings.base import EmbeddingProvider
@@ -75,6 +84,18 @@ def run_worker(settings: Settings) -> None:
     max_backoff_s: float = 30.0
     last_heartbeat: float = time.time()
 
+    # Generate a stable worker ID for health tracking
+    worker_id = f"{platform.node()}-{os.getpid()}"
+    jobs_processed = 0
+
+    # Ensure health table exists and register this worker
+    try:
+        with get_connection(database_url) as conn:
+            create_worker_health_table(conn)
+            upsert_worker_heartbeat(conn, worker_id, jobs_processed)
+    except Exception as e:
+        logger.warning("Could not initialize worker health table: %s", e)
+
     logger.info(
         "Worker started. Polling every %dms, batch size %d.",
         settings.worker_poll_interval_ms,
@@ -87,10 +108,13 @@ def run_worker(settings: Settings) -> None:
                 jobs = claim_batch(conn, batch_size=settings.worker_batch_size)
 
                 if not jobs:
-                    # Heartbeat log when idle
                     now = time.time()
                     if now - last_heartbeat >= WORKER_HEARTBEAT_INTERVAL_S:
                         logger.info("Worker alive, queue empty.")
+                        try:
+                            upsert_worker_heartbeat(conn, worker_id, jobs_processed)
+                        except Exception:
+                            pass
                         last_heartbeat = now
                     time.sleep(poll_interval_s)
                     backoff_s = 1.0  # Reset backoff on successful connection
@@ -104,6 +128,13 @@ def run_worker(settings: Settings) -> None:
                     if _shutdown_requested:
                         break
                     _process_job(conn, job, config, provider, max_retries)
+                    jobs_processed += 1
+
+                # Heartbeat after processing batch
+                try:
+                    upsert_worker_heartbeat(conn, worker_id, jobs_processed)
+                except Exception:
+                    pass  # Non-critical
 
         except psycopg.OperationalError as e:
             logger.warning(
@@ -117,6 +148,13 @@ def run_worker(settings: Settings) -> None:
             )
             time.sleep(backoff_s)
             backoff_s = min(backoff_s * 2, max_backoff_s)
+
+    # Clean up health record on shutdown
+    try:
+        with get_connection(database_url) as conn:
+            delete_worker_health(conn, worker_id)
+    except Exception:
+        pass  # Best effort cleanup
 
     logger.info("Worker stopped.")
 
