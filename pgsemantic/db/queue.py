@@ -120,6 +120,37 @@ SQL_RETRY_FAILED_ALL = """
     WHERE status = 'failed';
 """
 
+# -- Worker health table ---------------------------------------------------
+
+SQL_CREATE_WORKER_HEALTH_TABLE = """
+    CREATE TABLE IF NOT EXISTS pgvector_setup_worker_health (
+        worker_id       TEXT PRIMARY KEY,
+        last_heartbeat  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        jobs_processed  INT NOT NULL DEFAULT 0,
+        started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+"""
+
+SQL_UPSERT_WORKER_HEARTBEAT = """
+    INSERT INTO pgvector_setup_worker_health (worker_id, last_heartbeat, jobs_processed, started_at)
+    VALUES (%(worker_id)s, NOW(), %(jobs_processed)s, NOW())
+    ON CONFLICT (worker_id)
+    DO UPDATE SET
+        last_heartbeat = NOW(),
+        jobs_processed = %(jobs_processed)s;
+"""
+
+SQL_GET_WORKER_HEALTH = """
+    SELECT worker_id, last_heartbeat, jobs_processed, started_at
+    FROM pgvector_setup_worker_health
+    ORDER BY last_heartbeat DESC;
+"""
+
+SQL_DELETE_WORKER_HEALTH = """
+    DELETE FROM pgvector_setup_worker_health
+    WHERE worker_id = %(worker_id)s;
+"""
+
 
 # -- Functions --------------------------------------------------------------
 
@@ -235,3 +266,38 @@ def retry_failed_jobs(conn: DictConnection, table_name: str | None = None) -> in
     count = result.rowcount
     logger.info("Retried %d failed jobs%s", count, f" for {table_name}" if table_name else "")
     return count
+
+
+def create_worker_health_table(conn: DictConnection) -> None:
+    """Create the worker health table if it doesn't exist."""
+    conn.execute(SQL_CREATE_WORKER_HEALTH_TABLE)
+    conn.commit()
+    logger.info("Worker health table ready")
+
+
+def upsert_worker_heartbeat(
+    conn: DictConnection, worker_id: str, jobs_processed: int
+) -> None:
+    """Update worker heartbeat timestamp and job count."""
+    conn.execute(
+        SQL_UPSERT_WORKER_HEARTBEAT,
+        {"worker_id": worker_id, "jobs_processed": jobs_processed},
+    )
+    conn.commit()
+
+
+def get_worker_health(conn: DictConnection) -> list[dict[str, object]]:
+    """Get all worker health records. Returns [] if table doesn't exist."""
+    try:
+        result = conn.execute(SQL_GET_WORKER_HEALTH).fetchall()
+        return [dict(row) for row in result]
+    except Exception:
+        conn.rollback()
+        return []
+
+
+def delete_worker_health(conn: DictConnection, worker_id: str) -> None:
+    """Remove a worker's health record (on graceful shutdown)."""
+    conn.execute(SQL_DELETE_WORKER_HEALTH, {"worker_id": worker_id})
+    conn.commit()
+    logger.info("Removed health record for worker %s", worker_id)

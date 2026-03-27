@@ -7,8 +7,12 @@ from pgsemantic.db.queue import (
     count_failed,
     count_pending,
     create_queue_table,
+    create_worker_health_table,
+    delete_worker_health,
     fail_job,
+    get_worker_health,
     retry_failed_jobs,
+    upsert_worker_heartbeat,
 )
 
 
@@ -145,3 +149,56 @@ class TestRetryFailedJobs:
         mock_conn.execute.return_value.rowcount = 0
         result = retry_failed_jobs(mock_conn, table_name="products")
         assert result == 0
+
+
+class TestCreateWorkerHealthTable:
+    def test_executes_create_table(self) -> None:
+        mock_conn = MagicMock()
+        create_worker_health_table(mock_conn)
+        sql = mock_conn.execute.call_args[0][0]
+        assert "pgvector_setup_worker_health" in sql
+        mock_conn.commit.assert_called_once()
+
+
+class TestUpsertWorkerHeartbeat:
+    def test_upserts_heartbeat(self) -> None:
+        mock_conn = MagicMock()
+        upsert_worker_heartbeat(mock_conn, worker_id="mac-1234", jobs_processed=42)
+        args = mock_conn.execute.call_args
+        params = args[0][1]
+        assert params["worker_id"] == "mac-1234"
+        assert params["jobs_processed"] == 42
+        mock_conn.commit.assert_called_once()
+
+
+class TestGetWorkerHealth:
+    def test_returns_workers(self) -> None:
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchall.return_value = [
+            {"worker_id": "mac-1234", "last_heartbeat": "2026-03-26T12:00:00Z",
+             "jobs_processed": 42, "started_at": "2026-03-26T11:00:00Z"},
+        ]
+        result = get_worker_health(mock_conn)
+        assert len(result) == 1
+        assert result[0]["worker_id"] == "mac-1234"
+
+    def test_returns_empty_list_when_no_workers(self) -> None:
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchall.return_value = []
+        result = get_worker_health(mock_conn)
+        assert result == []
+
+    def test_handles_missing_table(self) -> None:
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = Exception("relation does not exist")
+        result = get_worker_health(mock_conn)
+        assert result == []
+
+
+class TestDeleteWorkerHealth:
+    def test_deletes_worker(self) -> None:
+        mock_conn = MagicMock()
+        delete_worker_health(mock_conn, worker_id="mac-1234")
+        args = mock_conn.execute.call_args
+        assert args[0][1] == {"worker_id": "mac-1234"}
+        mock_conn.commit.assert_called_once()
