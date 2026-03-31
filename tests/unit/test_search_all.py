@@ -1,9 +1,7 @@
 """Tests for cross-table unified search."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from pgsemantic.config import (
     DEFAULT_LOCAL_DIMENSIONS,
@@ -135,7 +133,7 @@ class TestSearchAll:
         mock_openai.embed_query.return_value = [0.2] * 1536
 
         with patch("pgsemantic.db.vectors.search_similar", return_value=[]):
-            results = search_all(
+            search_all(
                 conn=mock_conn,
                 query="test",
                 providers={"local": mock_local, "openai": mock_openai},

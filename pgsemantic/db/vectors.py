@@ -13,6 +13,7 @@ import logging
 
 import psycopg
 
+from pgsemantic.config import ProjectConfig
 from pgsemantic.db.introspect import get_column_names
 from pgsemantic.exceptions import InvalidFilterError
 
@@ -820,7 +821,7 @@ def search_all(
     conn: DictConnection,
     query: str,
     providers: dict[str, object],
-    project_config: "ProjectConfig",
+    project_config: ProjectConfig,
     limit: int = 10,
 ) -> list[dict[str, object]]:
     """Search across all configured tables, merging results by similarity.
@@ -830,8 +831,6 @@ def search_all(
 
     Each result is tagged with _source_table and _source_schema.
     """
-    from pgsemantic.config import ProjectConfig  # avoid circular at module level
-
     if not project_config.tables:
         return []
 
