@@ -41,8 +41,8 @@ from pgsemantic.db.vectors import (
     update_embedding,
 )
 from pgsemantic.embeddings import get_provider
-from pgsemantic.embeddings.chunker import chunk_text
 from pgsemantic.embeddings.base import EmbeddingProvider
+from pgsemantic.embeddings.chunker import chunk_text
 
 logger = logging.getLogger(__name__)
 

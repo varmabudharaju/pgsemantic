@@ -25,7 +25,6 @@ from pgsemantic.db.vectors import (
     _qualified_table,
     count_embedded,
     count_total_with_content,
-    search_chunked as db_search_chunked,
     search_similar,
 )
 from pgsemantic.db.vectors import (
@@ -33,6 +32,9 @@ from pgsemantic.db.vectors import (
 )
 from pgsemantic.db.vectors import (
     search_all as db_search_all,
+)
+from pgsemantic.db.vectors import (
+    search_chunked as db_search_chunked,
 )
 from pgsemantic.embeddings import get_provider
 from pgsemantic.exceptions import PgvectorSetupError
