@@ -1093,14 +1093,19 @@ async def search_table(req: SearchRequest):
                     pk_columns=table_config.primary_key,
                 )
 
-        hidden = {"embedding", "similarity"}
+        hidden = {"embedding", "similarity", "chunk_similarity"}
         cleaned = []
         for row in results:
             item = {}
-            item["similarity"] = round(float(str(row["similarity"])), 4)
-            item["content"] = str(row.get(table_config.column, row.get("content", "")))[:500]
+            # Chunked search returns chunk_similarity + matched_chunk;
+            # regular search returns similarity + content
+            sim = row.get("similarity", row.get("chunk_similarity", 0))
+            item["similarity"] = round(float(str(sim)), 4)
+            item["content"] = str(
+                row.get("matched_chunk", row.get(table_config.column, row.get("content", "")))
+            )[:500]
             for key, val in row.items():
-                if key not in hidden and key != table_config.column:
+                if key not in hidden and key != table_config.column and key != "matched_chunk":
                     item[key] = _safe_json_value(val)
             cleaned.append(item)
 
