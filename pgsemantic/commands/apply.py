@@ -152,6 +152,21 @@ def apply_command(
         "--external",
         help="Store embeddings in a separate shadow table (don't modify source table).",
     ),
+    chunked: bool = typer.Option(
+        False,
+        "--chunked",
+        help="Enable text chunking for long documents. Forces external storage.",
+    ),
+    chunk_max_tokens: int = typer.Option(
+        256,
+        "--chunk-max-tokens",
+        help="Maximum words per chunk (default 256).",
+    ),
+    chunk_overlap: int = typer.Option(
+        64,
+        "--chunk-overlap",
+        help="Words to overlap between adjacent chunks (default 64).",
+    ),
     db: str = typer.Option(
         "",
         "--db",
@@ -209,6 +224,8 @@ def apply_command(
     is_multi = len(source_columns) > 1
 
     # Resolve storage mode
+    if chunked:
+        external = True
     storage_mode = "external" if external else "inline"
     shadow_table_name = f"{SHADOW_TABLE_PREFIX}{table}" if external else None
 
@@ -275,12 +292,11 @@ def apply_command(
                 console.print(
                     "  [dim][3/9][/dim] Creating shadow table...", end=" "
                 )
-                create_shadow_table(
-                    conn,
-                    shadow_table=shadow_table_name,
-                    dimensions=dimensions,
-                    schema=schema,
-                )
+                if chunked:
+                    from pgsemantic.db.vectors import create_chunked_shadow_table
+                    create_chunked_shadow_table(conn, shadow_table_name, dimensions, schema)
+                else:
+                    create_shadow_table(conn, shadow_table_name, dimensions, schema)
                 console.print("[green]done[/green]")
                 console.print(
                     f"  [dim]    Your table remains unchanged. Embeddings "
@@ -406,6 +422,9 @@ def apply_command(
             columns=source_columns if is_multi else None,
             storage_mode=storage_mode,
             shadow_table=shadow_table_name,
+            chunked=chunked,
+            chunk_max_tokens=chunk_max_tokens,
+            chunk_overlap=chunk_overlap,
         )
         console.print("[green]done[/green]")
 
@@ -462,6 +481,9 @@ def _save_config(
     columns: list[str] | None = None,
     storage_mode: str = "inline",
     shadow_table: str | None = None,
+    chunked: bool = False,
+    chunk_max_tokens: int = 256,
+    chunk_overlap: int = 64,
 ) -> None:
     """Save or update the .pgsemantic.json project config."""
     from pgsemantic import __version__
@@ -488,6 +510,9 @@ def _save_config(
         columns=columns,
         storage_mode=storage_mode,
         shadow_table=shadow_table,
+        chunked=chunked,
+        chunk_max_tokens=chunk_max_tokens,
+        chunk_overlap=chunk_overlap,
     )
     config.tables.append(table_config)
     save_project_config(config)
