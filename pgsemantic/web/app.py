@@ -792,6 +792,7 @@ def index_table(req: IndexRequest):
                 conn, req.table, table_config.schema,
                 storage_mode=table_config.storage_mode,
                 shadow_table=table_config.shadow_table,
+                chunked=table_config.chunked,
             )
             remaining = total - already
 
@@ -904,6 +905,7 @@ def index_table(req: IndexRequest):
                 conn, req.table, table_config.schema,
                 storage_mode=table_config.storage_mode,
                 shadow_table=table_config.shadow_table,
+                chunked=table_config.chunked,
             )
 
         return {
@@ -1333,7 +1335,7 @@ async def status_dashboard():
         with get_connection(db_url) as conn:
             for tc in config.tables:
                 try:
-                    embedded = count_embedded(conn, tc.table, schema=tc.schema, storage_mode=tc.storage_mode, shadow_table=tc.shadow_table)
+                    embedded = count_embedded(conn, tc.table, schema=tc.schema, storage_mode=tc.storage_mode, shadow_table=tc.shadow_table, chunked=tc.chunked)
                     total = count_total_with_content(conn, tc.table, tc.column, schema=tc.schema, source_columns=tc.source_columns)
                     pending = count_pending(conn, tc.table)
                     failed = count_failed(conn, tc.table)

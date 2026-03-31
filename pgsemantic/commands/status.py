@@ -69,6 +69,7 @@ def status_command(
                         conn, tc.table, schema=tc.schema,
                         storage_mode=tc.storage_mode,
                         shadow_table=tc.shadow_table,
+                        chunked=tc.chunked,
                     )
                     total = count_total_with_content(
                         conn, tc.table, tc.column, schema=tc.schema,

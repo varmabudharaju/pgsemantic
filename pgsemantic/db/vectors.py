@@ -548,11 +548,18 @@ def count_embedded(
     schema: str = "public",
     storage_mode: str = "inline",
     shadow_table: str | None = None,
+    chunked: bool = False,
 ) -> int:
-    """Count rows that have a non-NULL embedding."""
+    """Count rows that have a non-NULL embedding.
+
+    For chunked tables, counts distinct row_ids (not individual chunks).
+    """
     if storage_mode == "external" and shadow_table:
         qualified_shadow = _qualified_table(shadow_table, schema)
-        sql = SQL_EXT_COUNT_EMBEDDED.format(shadow_table=qualified_shadow)
+        if chunked:
+            sql = f"SELECT COUNT(DISTINCT row_id) AS cnt FROM {qualified_shadow} WHERE embedding IS NOT NULL;"
+        else:
+            sql = SQL_EXT_COUNT_EMBEDDED.format(shadow_table=qualified_shadow)
     else:
         qualified = _qualified_table(table, schema)
         sql = SQL_COUNT_EMBEDDED.format(table=qualified)

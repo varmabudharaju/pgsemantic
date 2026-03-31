@@ -270,6 +270,7 @@ def get_embedding_status(table: str) -> dict[str, object]:
                 conn, table, schema=tc.schema,
                 storage_mode=tc.storage_mode,
                 shadow_table=tc.shadow_table,
+                chunked=tc.chunked,
             )
             total = count_total_with_content(
                 conn, table, tc.column, schema=tc.schema,

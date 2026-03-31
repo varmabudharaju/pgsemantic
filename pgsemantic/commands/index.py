@@ -127,6 +127,7 @@ def index_command(
                 conn, table, schema,
                 storage_mode=storage_mode,
                 shadow_table=shadow_table,
+                chunked=chunked,
             )
             remaining = total_with_content - already_embedded
 
@@ -275,6 +276,7 @@ def index_command(
                 conn, table, schema,
                 storage_mode=storage_mode,
                 shadow_table=shadow_table,
+                chunked=chunked,
             )
             coverage = (
                 (final_embedded / total_with_content * 100)
