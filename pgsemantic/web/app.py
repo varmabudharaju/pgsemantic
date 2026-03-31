@@ -1400,6 +1400,7 @@ async def mcp_config_snippet(request: Request):
             {"name": "get_sample_rows", "description": "Get sample rows from a table to understand its data"},
             {"name": "inspect_columns", "description": "Score text columns for semantic search suitability"},
             {"name": "list_configured_tables", "description": "List tables with semantic search already configured"},
+            {"name": "search_all_tables", "description": "Search across all configured tables at once"},
         ],
     }
 
