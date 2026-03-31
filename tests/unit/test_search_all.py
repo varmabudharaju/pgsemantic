@@ -191,3 +191,41 @@ class TestSearchAll:
 
         assert results[0]["_source_table"] == "products"
         assert results[0]["_source_schema"] == "inventory"
+
+    def test_skips_tables_with_missing_provider(self) -> None:
+        """Tables whose model has no provider should be skipped gracefully."""
+        from pgsemantic.db.vectors import search_all
+
+        config = ProjectConfig(
+            version="0.3.0",
+            tables=[
+                _make_table_config(table="products", model="local"),
+                _make_table_config(
+                    table="docs", model="openai",
+                    model_name=OPENAI_MODEL, dimensions=OPENAI_DIMENSIONS,
+                ),
+            ],
+        )
+
+        mock_conn = MagicMock()
+        mock_local = MagicMock()
+        mock_local.embed_query.return_value = [0.1] * 384
+
+        # Only provide "local", not "openai"
+        with patch("pgsemantic.db.vectors.search_similar") as mock_search:
+            mock_search.return_value = [
+                {"id": 1, "content": "Widget", "similarity": 0.8},
+            ]
+
+            results = search_all(
+                conn=mock_conn,
+                query="test",
+                providers={"local": mock_local},
+                project_config=config,
+                limit=10,
+            )
+
+        # Only the "local" table should have been searched
+        assert len(results) == 1
+        assert results[0]["_source_table"] == "products"
+        mock_search.assert_called_once()  # only one call, not two

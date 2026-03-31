@@ -830,6 +830,18 @@ def search_all(
     then merges and sorts all results by similarity score (descending).
 
     Each result is tagged with _source_table and _source_schema.
+
+    Args:
+        conn: Database connection.
+        query: Natural language search query.
+        providers: Dict mapping model key (e.g. "local", "openai") to an
+            EmbeddingProvider instance with an ``embed_query(text)`` method.
+        project_config: ProjectConfig with all configured tables.
+        limit: Maximum total results across all tables.
+
+    Returns:
+        List of result dicts sorted by similarity, each with _source_table
+        and _source_schema fields added.
     """
     if not project_config.tables:
         return []
