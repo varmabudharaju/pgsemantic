@@ -718,7 +718,7 @@ def hybrid_search(
             actual_col = key[:-4]
             sql += f"  AND {col_prefix}{_quoted(actual_col)} <= %({key})s\n"
         else:
-            sql += f"  AND {col_prefix}{_quoted(key)} = %({key})s\n"
+            sql += f"  AND {col_prefix}{_quoted(key)} ILIKE %({key})s\n"
         params[key] = value
 
     sql += f'    ORDER BY {emb_prefix}"embedding" <=> %(query_vector)s::vector\n'
@@ -814,3 +814,62 @@ def null_embedding(
 
     conn.commit()
     logger.debug("Nulled embedding for row %s in %s", row_id, table)
+
+
+def search_all(
+    conn: DictConnection,
+    query: str,
+    providers: dict[str, object],
+    project_config: "ProjectConfig",
+    limit: int = 10,
+) -> list[dict[str, object]]:
+    """Search across all configured tables, merging results by similarity.
+
+    Embeds the query once per unique model, searches each table independently,
+    then merges and sorts all results by similarity score (descending).
+
+    Each result is tagged with _source_table and _source_schema.
+    """
+    from pgsemantic.config import ProjectConfig  # avoid circular at module level
+
+    if not project_config.tables:
+        return []
+
+    # Embed query once per unique model
+    query_vectors: dict[str, list[float]] = {}
+    for tc in project_config.tables:
+        if tc.model not in query_vectors:
+            provider = providers.get(tc.model)
+            if provider is None:
+                logger.warning("No provider for model %s, skipping tables using it", tc.model)
+                continue
+            query_vectors[tc.model] = provider.embed_query(query)
+
+    # Search each table and tag results
+    all_results: list[dict[str, object]] = []
+    for tc in project_config.tables:
+        qv = query_vectors.get(tc.model)
+        if qv is None:
+            continue
+
+        table_results = search_similar(
+            conn=conn,
+            table=tc.table,
+            column=tc.column,
+            query_vector=qv,
+            limit=limit,
+            schema=tc.schema,
+            storage_mode=tc.storage_mode,
+            shadow_table=tc.shadow_table,
+            source_columns=tc.source_columns,
+            pk_columns=tc.primary_key,
+        )
+
+        for row in table_results:
+            row["_source_table"] = tc.table
+            row["_source_schema"] = tc.schema
+            all_results.append(row)
+
+    # Sort by similarity descending, take top N
+    all_results.sort(key=lambda r: float(str(r.get("similarity", 0))), reverse=True)
+    return all_results[:limit]
