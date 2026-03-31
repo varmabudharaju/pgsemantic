@@ -229,3 +229,49 @@ class TestSearchAll:
         assert len(results) == 1
         assert results[0]["_source_table"] == "products"
         mock_search.assert_called_once()  # only one call, not two
+
+
+class TestSearchCommandAllTables:
+    """Test that search_command works when --table is omitted."""
+
+    @patch("pgsemantic.commands.search.get_connection")
+    @patch("pgsemantic.commands.search.get_provider")
+    @patch("pgsemantic.commands.search.load_project_config")
+    @patch("pgsemantic.commands.search.load_settings")
+    def test_no_table_flag_searches_all(
+        self,
+        mock_settings: MagicMock,
+        mock_config: MagicMock,
+        mock_provider_fn: MagicMock,
+        mock_conn: MagicMock,
+    ) -> None:
+        """Omitting --table should invoke search_all over all configured tables."""
+        from typer.testing import CliRunner
+
+        from pgsemantic.cli import app
+
+        mock_settings.return_value = MagicMock(
+            database_url="postgresql://test@localhost/db",
+            openai_api_key=None,
+            ollama_base_url="http://localhost:11434",
+        )
+        mock_config.return_value = ProjectConfig(
+            version="0.3.0",
+            tables=[_make_table_config(table="products")],
+        )
+
+        mock_prov = MagicMock()
+        mock_prov.embed_query.return_value = [0.1] * 384
+        mock_provider_fn.return_value = mock_prov
+
+        with patch("pgsemantic.commands.search.search_all") as mock_sa:
+            mock_sa.return_value = [
+                {"id": 1, "content": "Widget", "similarity": 0.8,
+                 "_source_table": "products", "_source_schema": "public"},
+            ]
+
+            runner = CliRunner()
+            result = runner.invoke(app, ["search", "test query", "--format", "json"])
+
+            assert result.exit_code == 0
+            mock_sa.assert_called_once()

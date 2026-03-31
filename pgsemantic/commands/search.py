@@ -11,7 +11,7 @@ from rich.console import Console
 
 from pgsemantic.config import load_project_config, load_settings
 from pgsemantic.db.client import get_connection
-from pgsemantic.db.vectors import search_similar
+from pgsemantic.db.vectors import search_all, search_similar
 from pgsemantic.embeddings import get_provider
 
 console = Console()
@@ -41,16 +41,72 @@ def _results_to_jsonl(results: list[dict[str, Any]]) -> None:
         print(json.dumps(row, default=str))
 
 
+def _output_results(
+    results: list[dict[str, Any]],
+    query: str,
+    table_label: str,
+    column: str,
+    fmt: str,
+) -> None:
+    """Format and output search results in the requested format."""
+    if not results:
+        if fmt == "table":
+            console.print("\n[yellow]No results found.[/yellow]\n")
+        elif fmt == "json":
+            print("[]")
+        raise typer.Exit(code=0)
+
+    if fmt == "csv":
+        _results_to_csv(results)
+        return
+    if fmt == "json":
+        _results_to_json(results)
+        return
+    if fmt == "jsonl":
+        _results_to_jsonl(results)
+        return
+
+    # Rich table output
+    console.print()
+    console.print(
+        f"[dim]Results for:[/dim] [cyan]\"{query}\"[/cyan] "
+        f"[dim]in {table_label}[/dim]"
+    )
+
+    for i, row in enumerate(results, 1):
+        sim = float(str(row["similarity"]))
+        score_color = "green" if sim >= 0.5 else "yellow" if sim >= 0.3 else "dim"
+
+        meta_parts: list[str] = []
+        for key, val in row.items():
+            if key in _TABLE_HIDDEN_COLUMNS or key == column:
+                continue
+            meta_parts.append(f"[dim]{key}:[/dim] {val}")
+        meta_line = "  ".join(meta_parts)
+
+        content = str(row.get("content", row.get(column, "")))
+        if len(content) > 300:
+            content = content[:300] + "..."
+
+        console.print()
+        console.print(
+            f"  [{score_color}]{i}. (score: {sim:.3f})[/{score_color}]  {meta_line}"
+        )
+        console.print(f"  [white]{content}[/white]")
+
+    console.print()
+
+
 def search_command(
     query: str = typer.Argument(
         ...,
         help="Natural language search query.",
     ),
     table: str = typer.Option(
-        ...,
+        "",
         "--table",
         "-t",
-        help="Table to search.",
+        help="Table to search. Omit to search all configured tables.",
     ),
     limit: int = typer.Option(
         5,
@@ -71,7 +127,10 @@ def search_command(
         help="Output format: table (default), csv, json, jsonl.",
     ),
 ) -> None:
-    """Search your database using natural language."""
+    """Search your database using natural language.
+
+    Omit --table to search across all configured tables at once.
+    """
     if fmt not in ("table", "csv", "json", "jsonl"):
         console.print("[red]--format must be one of: table, csv, json, jsonl[/red]")
         raise typer.Exit(code=1)
@@ -90,86 +149,74 @@ def search_command(
     if config is None:
         console.print(
             "[red]No .pgsemantic.json found.[/red] "
-            f"Run [cyan]pgsemantic apply --table {table}[/cyan] first."
+            "Run [cyan]pgsemantic apply --table <table> --column <column>[/cyan] first."
         )
         raise typer.Exit(code=1)
 
-    table_config = config.get_table_config(table)
-    if table_config is None:
-        console.print(
-            f"[red]Table '{table}' not found in config.[/red] "
-            f"Run [cyan]pgsemantic apply --table {table}[/cyan] first."
-        )
-        raise typer.Exit(code=1)
+    # Single-table search (original behavior)
+    if table:
+        table_config = config.get_table_config(table)
+        if table_config is None:
+            console.print(
+                f"[red]Table '{table}' not found in config.[/red] "
+                f"Run [cyan]pgsemantic apply --table {table}[/cyan] first."
+            )
+            raise typer.Exit(code=1)
 
-    column = table_config.column
-    model = table_config.model
-    source_columns = table_config.source_columns
+        column_name = table_config.column
+        model = table_config.model
+        source_columns = table_config.source_columns
+
+        try:
+            api_key = settings.openai_api_key if model == "openai" else None
+            provider = get_provider(model, api_key=api_key)
+            query_vector = provider.embed_query(query)
+
+            with get_connection(database_url) as conn:
+                results = search_similar(
+                    conn, table, column_name, query_vector, limit=limit,
+                    schema=table_config.schema,
+                    storage_mode=table_config.storage_mode,
+                    shadow_table=table_config.shadow_table,
+                    source_columns=source_columns,
+                    pk_columns=table_config.primary_key,
+                )
+
+            _output_results(results, query, f"{table}.{column_name}", column_name, fmt)
+
+        except typer.Exit:
+            raise
+        except Exception as e:
+            console.print()
+            console.print(f"[red]Search failed:[/red] {e}")
+            raise typer.Exit(code=1) from None
+        return
+
+    # Cross-table search (--table omitted)
+    if not config.tables:
+        console.print("[red]No tables configured.[/red] Run pgsemantic apply first.")
+        raise typer.Exit(code=1)
 
     try:
-        api_key = settings.openai_api_key if model == "openai" else None
-        provider = get_provider(model, api_key=api_key)
-
-        query_vector = provider.embed_query(query)
+        providers: dict[str, object] = {}
+        for tc in config.tables:
+            if tc.model not in providers:
+                api_key = settings.openai_api_key if tc.model == "openai" else None
+                ollama_url = settings.ollama_base_url if tc.model == "ollama" else None
+                providers[tc.model] = get_provider(
+                    tc.model, api_key=api_key, ollama_base_url=ollama_url
+                )
 
         with get_connection(database_url) as conn:
-            results = search_similar(
-                conn, table, column, query_vector, limit=limit,
-                schema=table_config.schema,
-                storage_mode=table_config.storage_mode,
-                shadow_table=table_config.shadow_table,
-                source_columns=source_columns,
-                pk_columns=table_config.primary_key,
+            results = search_all(
+                conn=conn,
+                query=query,
+                providers=providers,
+                project_config=config,
+                limit=limit,
             )
 
-        if not results:
-            if fmt == "table":
-                console.print("\n[yellow]No results found.[/yellow]\n")
-            elif fmt == "json":
-                print("[]")
-            # csv and jsonl: empty output is correct
-            raise typer.Exit(code=0)  # re-raised by outer except typer.Exit guard
-
-        # --- machine-readable output ---
-        if fmt == "csv":
-            _results_to_csv(results)
-            return
-        if fmt == "json":
-            _results_to_json(results)
-            return
-        if fmt == "jsonl":
-            _results_to_jsonl(results)
-            return
-
-        # --- default: Rich table output ---
-        console.print()
-        console.print(
-            f"[dim]Results for:[/dim] [cyan]\"{query}\"[/cyan] "
-            f"[dim]in {table}.{column}[/dim]"
-        )
-
-        for i, row in enumerate(results, 1):
-            sim = float(str(row["similarity"]))
-            score_color = "green" if sim >= 0.5 else "yellow" if sim >= 0.3 else "dim"
-
-            meta_parts: list[str] = []
-            for key, val in row.items():
-                if key in _TABLE_HIDDEN_COLUMNS or key == column:
-                    continue
-                meta_parts.append(f"[dim]{key}:[/dim] {val}")
-            meta_line = "  ".join(meta_parts)
-
-            content = str(row.get(column, ""))
-            if len(content) > 300:
-                content = content[:300] + "..."
-
-            console.print()
-            console.print(
-                f"  [{score_color}]{i}. (score: {sim:.3f})[/{score_color}]  {meta_line}"
-            )
-            console.print(f"  [white]{content}[/white]")
-
-        console.print()
+        _output_results(results, query, "all tables", "content", fmt)
 
     except typer.Exit:
         raise
