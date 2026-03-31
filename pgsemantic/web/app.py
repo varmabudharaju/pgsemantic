@@ -804,38 +804,54 @@ def index_table(req: IndexRequest):
 
             rows_embedded = 0
             last_pk_params = None
+            source_columns = table_config.source_columns
+            pk_columns = table_config.primary_key
 
-            while True:
+            def _embed_texts(rows):
+                if table_config.storage_mode == "external":
+                    texts = [str(row["content"]) for row in rows]
+                elif len(source_columns) > 1:
+                    texts = [_content_text(source_columns, row) for row in rows]
+                else:
+                    texts = [str(row[table_config.column]) for row in rows]
+                return provider.embed(texts)
+
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=1) as executor:
                 batch = fetch_unembedded_batch(
                     conn, table=req.table, column=table_config.column,
-                    batch_size=req.batch_size, pk_columns=table_config.primary_key,
+                    batch_size=req.batch_size, pk_columns=pk_columns,
                     last_pk_params=last_pk_params, schema=table_config.schema,
                     storage_mode=table_config.storage_mode,
                     shadow_table=table_config.shadow_table,
-                    source_columns=table_config.source_columns,
+                    source_columns=source_columns,
                 )
-                if not batch:
-                    break
 
-                source_columns = table_config.source_columns
-                if table_config.storage_mode == "external":
-                    texts = [str(row["content"]) for row in batch]
-                elif len(source_columns) > 1:
-                    texts = [_content_text(source_columns, row) for row in batch]
-                else:
-                    texts = [str(row[table_config.column]) for row in batch]
+                while batch:
+                    embed_future = executor.submit(_embed_texts, batch)
 
-                embeddings = provider.embed(texts)
-                bulk_update_embeddings(
-                    conn, table=req.table, rows=batch, embeddings=embeddings,
-                    pk_columns=table_config.primary_key, schema=table_config.schema,
-                    storage_mode=table_config.storage_mode,
-                    shadow_table=table_config.shadow_table,
-                    source_column="+".join(source_columns),
-                    model_name=table_config.model_name,
-                )
-                rows_embedded += len(batch)
-                last_pk_params = _pk_last_params(table_config.primary_key, batch[-1])
+                    last_pk_params = _pk_last_params(pk_columns, batch[-1])
+                    next_batch = fetch_unembedded_batch(
+                        conn, table=req.table, column=table_config.column,
+                        batch_size=req.batch_size, pk_columns=pk_columns,
+                        last_pk_params=last_pk_params, schema=table_config.schema,
+                        storage_mode=table_config.storage_mode,
+                        shadow_table=table_config.shadow_table,
+                        source_columns=source_columns,
+                    )
+
+                    embeddings = embed_future.result()
+                    bulk_update_embeddings(
+                        conn, table=req.table, rows=batch, embeddings=embeddings,
+                        pk_columns=pk_columns, schema=table_config.schema,
+                        storage_mode=table_config.storage_mode,
+                        shadow_table=table_config.shadow_table,
+                        source_column="+".join(source_columns),
+                        model_name=table_config.model_name,
+                    )
+                    rows_embedded += len(batch)
+                    batch = next_batch
 
             final_embedded = count_embedded(
                 conn, req.table, table_config.schema,
