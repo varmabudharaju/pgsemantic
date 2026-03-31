@@ -28,12 +28,14 @@ from pgsemantic.db.client import get_connection
 from pgsemantic.db.vectors import (
     _content_text,
     _pk_last_params,
+    bulk_insert_chunks,
     bulk_update_embeddings,
     count_embedded,
     count_total_with_content,
     fetch_unembedded_batch,
 )
 from pgsemantic.embeddings import get_provider
+from pgsemantic.embeddings.chunker import chunk_text
 
 console = Console()
 
@@ -93,6 +95,9 @@ def index_command(
     source_columns = table_config.source_columns
     storage_mode = table_config.storage_mode
     shadow_table = table_config.shadow_table
+    chunked = table_config.chunked
+    chunk_max_tokens = table_config.chunk_max_tokens
+    chunk_overlap = table_config.chunk_overlap
 
     col_display = ", ".join(source_columns)
     console.print()
@@ -171,32 +176,60 @@ def index_command(
                     if not batch:
                         break
 
-                    # Extract texts for embedding
-                    if storage_mode == "external":
-                        # External mode: text is pre-concatenated as "content"
-                        texts = [str(row["content"]) for row in batch]
-                    elif len(source_columns) > 1:
-                        # Inline multi-column: concatenate with labels in Python
-                        texts = [_content_text(source_columns, row) for row in batch]
+                    if chunked:
+                        # Chunked mode: chunk each row's text, embed chunks
+                        for row in batch:
+                            if storage_mode == "external":
+                                text = str(row["content"])
+                            elif len(source_columns) > 1:
+                                text = _content_text(source_columns, row)
+                            else:
+                                text = str(row[column])
+
+                            text_chunks = chunk_text(text, chunk_max_tokens, chunk_overlap)
+                            if not text_chunks:
+                                continue
+
+                            row_id = (
+                                str(row[pk_columns[0]])
+                                if len(pk_columns) == 1
+                                else ",".join(str(row[c]) for c in pk_columns)
+                            )
+                            chunk_embeddings = provider.embed(text_chunks)
+
+                            bulk_insert_chunks(
+                                conn,
+                                shadow_table=shadow_table,
+                                row_id=row_id,
+                                chunks=text_chunks,
+                                embeddings=chunk_embeddings,
+                                source_column="+".join(source_columns),
+                                model_name=table_config.model_name,
+                                schema=schema,
+                            )
                     else:
-                        texts = [str(row[column]) for row in batch]
+                        # Original non-chunked path
+                        if storage_mode == "external":
+                            texts = [str(row["content"]) for row in batch]
+                        elif len(source_columns) > 1:
+                            texts = [_content_text(source_columns, row) for row in batch]
+                        else:
+                            texts = [str(row[column]) for row in batch]
 
-                    # Generate embeddings
-                    embeddings = provider.embed(texts)
+                        embeddings = provider.embed(texts)
 
-                    # Write embeddings back
-                    bulk_update_embeddings(
-                        conn,
-                        table=table,
-                        rows=batch,
-                        embeddings=embeddings,
-                        pk_columns=pk_columns,
-                        schema=schema,
-                        storage_mode=storage_mode,
-                        shadow_table=shadow_table,
-                        source_column="+".join(source_columns),
-                        model_name=table_config.model_name,
-                    )
+                        bulk_update_embeddings(
+                            conn,
+                            table=table,
+                            rows=batch,
+                            embeddings=embeddings,
+                            pk_columns=pk_columns,
+                            schema=schema,
+                            storage_mode=storage_mode,
+                            shadow_table=shadow_table,
+                            source_column="+".join(source_columns),
+                            model_name=table_config.model_name,
+                        )
 
                     rows_embedded += len(batch)
                     last_pk_params = _pk_last_params(pk_columns, batch[-1])
