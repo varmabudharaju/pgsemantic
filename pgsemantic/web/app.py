@@ -48,6 +48,7 @@ from pgsemantic.db.vectors import (
     _content_text,
     _pk_last_params,
     _qualified_table,
+    bulk_insert_chunks,
     bulk_update_embeddings,
     count_embedded,
     count_total_with_content,
@@ -806,15 +807,22 @@ def index_table(req: IndexRequest):
             last_pk_params = None
             source_columns = table_config.source_columns
             pk_columns = table_config.primary_key
+            chunked = table_config.chunked
+
+            def _extract_text(row):
+                if table_config.storage_mode == "external":
+                    return str(row["content"])
+                if len(source_columns) > 1:
+                    return _content_text(source_columns, row)
+                return str(row[table_config.column])
 
             def _embed_texts(rows):
-                if table_config.storage_mode == "external":
-                    texts = [str(row["content"]) for row in rows]
-                elif len(source_columns) > 1:
-                    texts = [_content_text(source_columns, row) for row in rows]
-                else:
-                    texts = [str(row[table_config.column]) for row in rows]
-                return provider.embed(texts)
+                return provider.embed([_extract_text(r) for r in rows])
+
+            def _row_id(row):
+                if len(pk_columns) == 1:
+                    return str(row[pk_columns[0]])
+                return ",".join(str(row[c]) for c in pk_columns)
 
             from concurrent.futures import ThreadPoolExecutor
 
@@ -829,29 +837,68 @@ def index_table(req: IndexRequest):
                 )
 
                 while batch:
-                    embed_future = executor.submit(_embed_texts, batch)
+                    if chunked:
+                        # Chunked: chunk + embed each row individually
+                        from pgsemantic.embeddings.chunker import chunk_text
+                        for row in batch:
+                            text = _extract_text(row)
+                            text_chunks = chunk_text(
+                                text,
+                                table_config.chunk_max_tokens,
+                                table_config.chunk_overlap,
+                            )
+                            if not text_chunks:
+                                continue
+                            chunk_embeddings = provider.embed(text_chunks)
+                            bulk_insert_chunks(
+                                conn,
+                                shadow_table=table_config.shadow_table,
+                                row_id=_row_id(row),
+                                chunks=text_chunks,
+                                embeddings=chunk_embeddings,
+                                source_column="+".join(source_columns),
+                                model_name=table_config.model_name,
+                                schema=table_config.schema,
+                            )
+                    else:
+                        # Non-chunked: pipeline embed + DB write
+                        embed_future = executor.submit(_embed_texts, batch)
 
-                    last_pk_params = _pk_last_params(pk_columns, batch[-1])
-                    next_batch = fetch_unembedded_batch(
-                        conn, table=req.table, column=table_config.column,
-                        batch_size=req.batch_size, pk_columns=pk_columns,
-                        last_pk_params=last_pk_params, schema=table_config.schema,
-                        storage_mode=table_config.storage_mode,
-                        shadow_table=table_config.shadow_table,
-                        source_columns=source_columns,
-                    )
+                        last_pk_params = _pk_last_params(pk_columns, batch[-1])
+                        next_batch = fetch_unembedded_batch(
+                            conn, table=req.table, column=table_config.column,
+                            batch_size=req.batch_size, pk_columns=pk_columns,
+                            last_pk_params=last_pk_params, schema=table_config.schema,
+                            storage_mode=table_config.storage_mode,
+                            shadow_table=table_config.shadow_table,
+                            source_columns=source_columns,
+                        )
 
-                    embeddings = embed_future.result()
-                    bulk_update_embeddings(
-                        conn, table=req.table, rows=batch, embeddings=embeddings,
-                        pk_columns=pk_columns, schema=table_config.schema,
-                        storage_mode=table_config.storage_mode,
-                        shadow_table=table_config.shadow_table,
-                        source_column="+".join(source_columns),
-                        model_name=table_config.model_name,
-                    )
+                        embeddings = embed_future.result()
+                        bulk_update_embeddings(
+                            conn, table=req.table, rows=batch, embeddings=embeddings,
+                            pk_columns=pk_columns, schema=table_config.schema,
+                            storage_mode=table_config.storage_mode,
+                            shadow_table=table_config.shadow_table,
+                            source_column="+".join(source_columns),
+                            model_name=table_config.model_name,
+                        )
+
                     rows_embedded += len(batch)
-                    batch = next_batch
+                    last_pk_params = _pk_last_params(pk_columns, batch[-1])
+
+                    # For non-chunked, next_batch was already fetched during pipelining
+                    if chunked:
+                        batch = fetch_unembedded_batch(
+                            conn, table=req.table, column=table_config.column,
+                            batch_size=req.batch_size, pk_columns=pk_columns,
+                            last_pk_params=last_pk_params, schema=table_config.schema,
+                            storage_mode=table_config.storage_mode,
+                            shadow_table=table_config.shadow_table,
+                            source_columns=source_columns,
+                        )
+                    else:
+                        batch = next_batch
 
             final_embedded = count_embedded(
                 conn, req.table, table_config.schema,
