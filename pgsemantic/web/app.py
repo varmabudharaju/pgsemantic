@@ -567,6 +567,69 @@ async def sample_table_rows(table_name: str, schema: str = "public", limit: int 
         raise HTTPException(500, "Failed to fetch sample rows. Check server logs.")
 
 
+@app.get("/api/row")
+async def get_row_detail(table: str, row_id: str, schema: str = "public"):
+    """Fetch a single row by primary key for detail view."""
+    _validate_identifier(table)
+    if schema != "public":
+        _validate_identifier(schema)
+
+    db_url = _get_db_url()
+    config = load_project_config()
+    if config is None:
+        raise HTTPException(400, "No config found.")
+
+    table_config = config.get_table_config(table)
+    if table_config is None:
+        raise HTTPException(400, f"Table '{table}' not configured.")
+
+    pk_columns = table_config.primary_key
+    try:
+        with get_connection(db_url, register_vector_type=False) as conn:
+            qualified = _qualified_table(table, schema)
+
+            # Build WHERE clause for PK
+            if len(pk_columns) == 1:
+                where = f'"{pk_columns[0]}"::TEXT = %(row_id)s'
+            else:
+                # Composite PK: row_id is comma-separated
+                parts = row_id.split(",")
+                conditions = []
+                params = {"row_id": row_id}
+                for i, col in enumerate(pk_columns):
+                    params[f"pk_{i}"] = parts[i] if i < len(parts) else ""
+                    conditions.append(f'"{col}"::TEXT = %(pk_{i})s')
+                where = " AND ".join(conditions)
+
+            if len(pk_columns) == 1:
+                sql = f"SELECT * FROM {qualified} WHERE {where} LIMIT 1"
+                params = {"row_id": row_id}
+            else:
+                sql = f"SELECT * FROM {qualified} WHERE {where} LIMIT 1"
+
+            result = conn.execute(sql, params).fetchone()
+
+        if result is None:
+            return {"found": False, "row": None}
+
+        row = {}
+        for key, val in dict(result).items():
+            if key == "embedding":
+                continue
+            s = str(val) if val is not None else None
+            if s and len(s) > 2000:
+                s = s[:2000] + "..."
+            row[key] = s
+
+        return {"found": True, "row": row}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("get_row_detail failed")
+        raise HTTPException(500, f"Failed to fetch row: {e}")
+
+
 @app.post("/api/apply")
 async def apply_setup(req: ApplyRequest):
     """Set up semantic search on a table."""
