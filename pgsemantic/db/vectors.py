@@ -884,3 +884,141 @@ def search_all(
     # Sort by similarity descending, take top N
     all_results.sort(key=lambda r: float(str(r.get("similarity", 0))), reverse=True)
     return all_results[:limit]
+
+
+# -- Chunked shadow table --------------------------------------------------
+
+SQL_CREATE_CHUNKED_SHADOW_TABLE = """
+    CREATE TABLE IF NOT EXISTS {shadow_table} (
+        row_id          TEXT            NOT NULL,
+        chunk_index     INT             NOT NULL,
+        chunk_text      TEXT            NOT NULL,
+        embedding       vector({dimensions}),
+        source_column   TEXT            NOT NULL,
+        model_name      TEXT            NOT NULL,
+        updated_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (row_id, chunk_index)
+    );
+"""
+
+SQL_DELETE_ROW_CHUNKS = """
+    DELETE FROM {shadow_table} WHERE row_id = %(row_id)s;
+"""
+
+SQL_INSERT_CHUNK = """
+    INSERT INTO {shadow_table}
+        (row_id, chunk_index, chunk_text, embedding, source_column, model_name, updated_at)
+    VALUES
+        (%(row_id)s, %(chunk_index)s, %(chunk_text)s, %(embedding)s::vector,
+         %(source_column)s, %(model_name)s, NOW());
+"""
+
+SQL_CHUNKED_SEARCH = """
+    SELECT
+        e.row_id,
+        e.chunk_index,
+        e.chunk_text,
+        1 - (e.embedding <=> %(query_vector)s::vector) AS similarity
+    FROM {shadow_table} e
+    WHERE e.embedding IS NOT NULL
+    ORDER BY e.embedding <=> %(query_vector)s::vector
+    LIMIT %(limit)s;
+"""
+
+
+def create_chunked_shadow_table(
+    conn: DictConnection,
+    shadow_table: str,
+    dimensions: int,
+    schema: str = "public",
+) -> None:
+    """Create a chunked shadow table with (row_id, chunk_index) composite PK."""
+    qualified_shadow = _qualified_table(shadow_table, schema)
+    sql = SQL_CREATE_CHUNKED_SHADOW_TABLE.format(
+        shadow_table=qualified_shadow,
+        dimensions=dimensions,
+    )
+    conn.execute(sql)
+    conn.commit()
+    logger.info("Created chunked shadow table %s", qualified_shadow)
+
+
+def bulk_insert_chunks(
+    conn: DictConnection,
+    shadow_table: str,
+    row_id: str,
+    chunks: list[str],
+    embeddings: list[list[float]],
+    source_column: str,
+    model_name: str,
+    schema: str = "public",
+) -> None:
+    """Delete old chunks for a row and insert new chunked embeddings."""
+    qualified_shadow = _qualified_table(shadow_table, schema)
+
+    conn.execute(
+        SQL_DELETE_ROW_CHUNKS.format(shadow_table=qualified_shadow),
+        {"row_id": row_id},
+    )
+
+    for i, (chunk_text_val, embedding) in enumerate(zip(chunks, embeddings, strict=True)):
+        conn.execute(
+            SQL_INSERT_CHUNK.format(shadow_table=qualified_shadow),
+            {
+                "row_id": row_id,
+                "chunk_index": i,
+                "chunk_text": chunk_text_val,
+                "embedding": embedding,
+                "source_column": source_column,
+                "model_name": model_name,
+            },
+        )
+
+    conn.commit()
+    logger.debug("Inserted %d chunks for row %s in %s", len(chunks), row_id, shadow_table)
+
+
+def search_chunked(
+    conn: DictConnection,
+    table: str,
+    column: str,
+    query_vector: list[float],
+    shadow_table: str,
+    schema: str = "public",
+    pk_columns: list[str] | None = None,
+    limit: int = 10,
+) -> list[dict[str, object]]:
+    """Search chunked shadow table, returning best chunk per source row.
+
+    Queries the shadow table for similar chunks, then deduplicates by row_id
+    keeping only the highest-similarity chunk per row.
+
+    Returns dicts with: row_id, matched_chunk, chunk_similarity, chunk_index.
+    """
+    if pk_columns is None:
+        pk_columns = ["id"]
+
+    qualified_shadow = _qualified_table(shadow_table, schema)
+    fetch_limit = limit * 3
+
+    ef_search = max(fetch_limit * 2, 100)
+    conn.execute(f"SET hnsw.ef_search = {ef_search}")
+
+    sql = SQL_CHUNKED_SEARCH.format(shadow_table=qualified_shadow)
+    rows = conn.execute(
+        sql, {"query_vector": query_vector, "limit": fetch_limit}
+    ).fetchall()
+
+    seen: dict[str, dict[str, object]] = {}
+    for row in rows:
+        rid = str(row["row_id"])
+        if rid not in seen:
+            seen[rid] = {
+                "row_id": rid,
+                "matched_chunk": str(row["chunk_text"]),
+                "chunk_similarity": float(str(row["similarity"])),
+                "chunk_index": int(str(row["chunk_index"])),
+            }
+
+    results = sorted(seen.values(), key=lambda r: r["chunk_similarity"], reverse=True)
+    return results[:limit]
