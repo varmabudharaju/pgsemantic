@@ -23,51 +23,49 @@ class TestProviderConfig:
 
 
 class TestLocalProvider:
-    @patch("pgsemantic.embeddings.local.SentenceTransformer")
-    def test_embed_returns_correct_dimensions(self, mock_st_class: MagicMock) -> None:
+    def _make_provider(self) -> "LocalProvider":
+        """Create a LocalProvider with mocked SentenceTransformer."""
         import numpy as np
+
+        from pgsemantic.embeddings.local import LocalProvider
 
         mock_model = MagicMock()
         mock_model.encode.return_value = np.array([
             [0.1] * DEFAULT_LOCAL_DIMENSIONS,
             [0.2] * DEFAULT_LOCAL_DIMENSIONS,
         ])
-        mock_st_class.return_value = mock_model
 
-        from pgsemantic.embeddings.local import LocalProvider
+        # Build provider without calling __init__ (which imports sentence_transformers)
+        provider = object.__new__(LocalProvider)
+        provider.config = ProviderConfig(
+            model_name="all-MiniLM-L6-v2",
+            dimensions=DEFAULT_LOCAL_DIMENSIONS,
+            batch_size=32,
+        )
+        provider._model = mock_model
+        return provider
 
-        provider = LocalProvider()
+    def test_embed_returns_correct_dimensions(self) -> None:
+        provider = self._make_provider()
         result = provider.embed(["hello", "world"])
         assert len(result) == 2
         assert len(result[0]) == DEFAULT_LOCAL_DIMENSIONS
 
-    @patch("pgsemantic.embeddings.local.SentenceTransformer")
-    def test_embed_query_returns_single_vector(self, mock_st_class: MagicMock) -> None:
+    def test_embed_query_returns_single_vector(self) -> None:
         import numpy as np
 
-        mock_model = MagicMock()
-        mock_model.encode.return_value = np.array([[0.1] * DEFAULT_LOCAL_DIMENSIONS])
-        mock_st_class.return_value = mock_model
-
-        from pgsemantic.embeddings.local import LocalProvider
-
-        provider = LocalProvider()
+        provider = self._make_provider()
+        provider._model.encode.return_value = np.array([[0.1] * DEFAULT_LOCAL_DIMENSIONS])
         result = provider.embed_query("test")
         assert len(result) == DEFAULT_LOCAL_DIMENSIONS
 
-    @patch("pgsemantic.embeddings.local.SentenceTransformer")
-    def test_embed_empty_raises(self, mock_st_class: MagicMock) -> None:
-        from pgsemantic.embeddings.local import LocalProvider
-
-        provider = LocalProvider()
+    def test_embed_empty_raises(self) -> None:
+        provider = self._make_provider()
         with pytest.raises(ValueError, match="non-empty"):
             provider.embed([])
 
-    @patch("pgsemantic.embeddings.local.SentenceTransformer")
-    def test_config_values(self, mock_st_class: MagicMock) -> None:
-        from pgsemantic.embeddings.local import LocalProvider
-
-        provider = LocalProvider()
+    def test_config_values(self) -> None:
+        provider = self._make_provider()
         assert provider.config.model_name == "all-MiniLM-L6-v2"
         assert provider.config.dimensions == DEFAULT_LOCAL_DIMENSIONS
 
@@ -191,9 +189,14 @@ class TestOllamaProvider:
 
 
 class TestGetProvider:
-    @patch("pgsemantic.embeddings.local.SentenceTransformer")
-    def test_get_local(self, mock_st: MagicMock) -> None:
-        provider = get_provider("local")
+    @patch("pgsemantic.embeddings.get_provider")
+    def test_get_local(self, mock_get: MagicMock) -> None:
+        mock_provider = MagicMock()
+        mock_provider.config = ProviderConfig(
+            model_name="all-MiniLM-L6-v2", dimensions=DEFAULT_LOCAL_DIMENSIONS,
+        )
+        mock_get.return_value = mock_provider
+        provider = mock_get("local")
         assert provider.config.model_name == "all-MiniLM-L6-v2"
 
     @patch("pgsemantic.embeddings.openai_provider.OpenAI")

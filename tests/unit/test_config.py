@@ -48,8 +48,11 @@ class TestSettings:
         assert settings.mcp_transport == "stdio"
         assert settings.log_level == "info"
 
-    def test_load_settings_missing_database_url(self) -> None:
-        with patch.dict(os.environ, {}, clear=True):
+    @patch("pgsemantic.config.load_dotenv")
+    def test_load_settings_missing_database_url(self, mock_dotenv) -> None:
+        """When DATABASE_URL is not in env (and dotenv loading is skipped), it should be None."""
+        env_without_db = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+        with patch.dict(os.environ, env_without_db, clear=True):
             settings = load_settings()
         assert settings.database_url is None
 
