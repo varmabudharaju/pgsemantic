@@ -32,8 +32,16 @@ from pgsemantic.db.queue import (
     fail_job,
     upsert_worker_heartbeat,
 )
-from pgsemantic.db.vectors import fetch_row_text, null_embedding, update_embedding
+from pgsemantic.db.vectors import (
+    SQL_DELETE_ROW_CHUNKS,
+    _qualified_table,
+    bulk_insert_chunks,
+    fetch_row_text,
+    null_embedding,
+    update_embedding,
+)
 from pgsemantic.embeddings import get_provider
+from pgsemantic.embeddings.chunker import chunk_text
 from pgsemantic.embeddings.base import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
@@ -197,11 +205,19 @@ def _process_job(
 
     try:
         if operation == "DELETE":
-            null_embedding(
-                conn, table_name, row_id,
-                pk_columns=pk_columns, schema=table_config.schema,
-                storage_mode=storage_mode, shadow_table=shadow_table,
-            )
+            if table_config.chunked and shadow_table:
+                qualified_shadow = _qualified_table(shadow_table, table_config.schema)
+                conn.execute(
+                    SQL_DELETE_ROW_CHUNKS.format(shadow_table=qualified_shadow),
+                    {"row_id": row_id},
+                )
+                conn.commit()
+            else:
+                null_embedding(
+                    conn, table_name, row_id,
+                    pk_columns=pk_columns, schema=table_config.schema,
+                    storage_mode=storage_mode, shadow_table=shadow_table,
+                )
             complete_job(conn, job_id=job_id)
             logger.info(
                 "Cleared embedding for %s#%s (DELETE)", table_name, row_id
@@ -223,31 +239,49 @@ def _process_job(
                 logger.info("Row %s#%s gone, marking complete.", table_name, row_id)
                 return
 
-            # Generate embedding
-            embedding: list[float] = provider.embed_query(text)
+            if table_config.chunked and shadow_table:
+                # Chunked mode
+                text_chunks = chunk_text(
+                    text,
+                    table_config.chunk_max_tokens,
+                    table_config.chunk_overlap,
+                )
+                if not text_chunks:
+                    complete_job(conn, job_id=job_id)
+                    return
 
-            # Write embedding back
-            update_embedding(
-                conn,
-                table_name,
-                row_id,
-                embedding,
-                pk_columns=pk_columns,
-                schema=table_config.schema,
-                storage_mode=storage_mode,
-                shadow_table=shadow_table,
-                source_column="+".join(source_columns),
-                model_name=table_config.model_name,
-            )
-            conn.commit()
-            complete_job(conn, job_id=job_id)
-            logger.info(
-                "Embedded %s#%s (%s, %dd)",
-                table_name,
-                row_id,
-                column_name,
-                len(embedding),
-            )
+                chunk_embeddings: list[list[float]] = provider.embed(text_chunks)
+                bulk_insert_chunks(
+                    conn,
+                    shadow_table=shadow_table,
+                    row_id=row_id,
+                    chunks=text_chunks,
+                    embeddings=chunk_embeddings,
+                    source_column="+".join(source_columns),
+                    model_name=table_config.model_name,
+                    schema=table_config.schema,
+                )
+                complete_job(conn, job_id=job_id)
+                logger.info(
+                    "Embedded %s#%s as %d chunks (%s)",
+                    table_name, row_id, len(text_chunks), column_name,
+                )
+            else:
+                # Original non-chunked path
+                embedding: list[float] = provider.embed_query(text)
+                update_embedding(
+                    conn, table_name, row_id, embedding,
+                    pk_columns=pk_columns, schema=table_config.schema,
+                    storage_mode=storage_mode, shadow_table=shadow_table,
+                    source_column="+".join(source_columns),
+                    model_name=table_config.model_name,
+                )
+                conn.commit()
+                complete_job(conn, job_id=job_id)
+                logger.info(
+                    "Embedded %s#%s (%s, %dd)",
+                    table_name, row_id, column_name, len(embedding),
+                )
 
     except Exception as e:
         logger.error("Failed to process job %d: %s", job_id, e)
