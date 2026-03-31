@@ -30,6 +30,9 @@ from pgsemantic.db.vectors import (
 from pgsemantic.db.vectors import (
     hybrid_search as db_hybrid_search,
 )
+from pgsemantic.db.vectors import (
+    search_all as db_search_all,
+)
 from pgsemantic.embeddings import get_provider
 from pgsemantic.exceptions import PgvectorSetupError
 
@@ -450,3 +453,79 @@ def list_configured_tables() -> list[dict[str, object]]:
         }
         for tc in config.tables
     ]
+
+
+@mcp.tool()
+def search_all_tables(
+    query: str,
+    limit: int = 10,
+) -> list[dict[str, object]]:
+    """Search across ALL configured tables at once.
+
+    Queries every table set up with pgsemantic, merges results by similarity
+    score, and returns the top matches. Each result includes _source_table
+    and _source_schema to identify where it came from.
+
+    Use this when you want to search broadly across the entire database
+    rather than targeting a specific table.
+
+    Args:
+        query: The natural-language search query.
+        limit: Maximum number of results to return across all tables (default 10).
+
+    Returns:
+        List of matching rows sorted by similarity, each with _source_table,
+        _source_schema, content, and similarity score.
+    """
+    settings = load_settings()
+    if not settings.database_url:
+        raise ToolError(
+            "DATABASE_URL not set. "
+            "Set it in your .env file or as an environment variable."
+        )
+
+    config = load_project_config()
+    if config is None or not config.tables:
+        raise ToolError(
+            "No tables configured. Run: pgsemantic apply --table <table> --column <column>"
+        )
+
+    try:
+        # Build providers dict (one per unique model)
+        providers: dict[str, object] = {}
+        for tc in config.tables:
+            if tc.model not in providers:
+                api_key = settings.openai_api_key if tc.model == "openai" else None
+                providers[tc.model] = _get_or_create_provider(
+                    tc.model,
+                    api_key=api_key,
+                    ollama_base_url=settings.ollama_base_url,
+                )
+
+        with get_connection(settings.database_url) as conn:
+            results = db_search_all(
+                conn=conn,
+                query=query,
+                providers=providers,
+                project_config=config,
+                limit=limit,
+            )
+
+        # Strip raw embedding vectors
+        clean_results = [
+            {k: v for k, v in row.items() if k != "embedding"}
+            for row in results
+        ]
+
+        logger.info(
+            "search_all_tables: query=%r results=%d",
+            query[:50],
+            len(clean_results),
+        )
+        return clean_results
+
+    except PgvectorSetupError as e:
+        raise ToolError(str(e)) from e
+    except Exception as e:
+        logger.exception("Unexpected error in search_all_tables")
+        raise ToolError(f"Search failed: {e}") from e

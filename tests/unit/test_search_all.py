@@ -326,3 +326,47 @@ class TestSearchAllEndpoint:
         data = resp.json()
         assert len(data["results"]) == 1
         assert data["results"][0]["_source_table"] == "products"
+
+
+class TestSearchAllMcpTool:
+    """Test the search_all MCP tool."""
+
+    @patch("pgsemantic.mcp_server.server.get_connection")
+    @patch("pgsemantic.mcp_server.server._get_or_create_provider")
+    @patch("pgsemantic.mcp_server.server.load_project_config")
+    @patch("pgsemantic.mcp_server.server.load_settings")
+    def test_search_all_tool_returns_results(
+        self,
+        mock_settings: MagicMock,
+        mock_config: MagicMock,
+        mock_provider_fn: MagicMock,
+        mock_conn_ctx: MagicMock,
+    ) -> None:
+        mock_settings.return_value = MagicMock(
+            database_url="postgresql://test@localhost/db",
+            openai_api_key=None,
+            ollama_base_url="http://localhost:11434",
+        )
+        mock_config.return_value = ProjectConfig(
+            version="0.3.0",
+            tables=[_make_table_config(table="products")],
+        )
+
+        mock_prov = MagicMock()
+        mock_prov.embed_query.return_value = [0.1] * 384
+        mock_provider_fn.return_value = mock_prov
+
+        with patch("pgsemantic.mcp_server.server.db_search_all") as mock_sa:
+            mock_sa.return_value = [
+                {"id": 1, "content": "Widget", "similarity": 0.8,
+                 "embedding": [0.1] * 384,
+                 "_source_table": "products", "_source_schema": "public"},
+            ]
+
+            from pgsemantic.mcp_server.server import search_all_tables
+
+            results = search_all_tables(query="test", limit=5)
+
+        assert len(results) == 1
+        assert results[0]["_source_table"] == "products"
+        assert "embedding" not in results[0]  # stripped
