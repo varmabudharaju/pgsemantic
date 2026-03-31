@@ -121,6 +121,9 @@ class TableConfig:
     columns: list[str] | None = None
     storage_mode: str = "inline"
     shadow_table: str | None = None
+    chunked: bool = False
+    chunk_max_tokens: int = 256
+    chunk_overlap: int = 64
 
     @property
     def source_columns(self) -> list[str]:
