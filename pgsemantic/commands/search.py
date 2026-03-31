@@ -11,7 +11,7 @@ from rich.console import Console
 
 from pgsemantic.config import load_project_config, load_settings
 from pgsemantic.db.client import get_connection
-from pgsemantic.db.vectors import search_all, search_similar
+from pgsemantic.db.vectors import search_all, search_chunked, search_similar
 from pgsemantic.embeddings import get_provider
 
 console = Console()
@@ -173,14 +173,23 @@ def search_command(
             query_vector = provider.embed_query(query)
 
             with get_connection(database_url) as conn:
-                results = search_similar(
-                    conn, table, column_name, query_vector, limit=limit,
-                    schema=table_config.schema,
-                    storage_mode=table_config.storage_mode,
-                    shadow_table=table_config.shadow_table,
-                    source_columns=source_columns,
-                    pk_columns=table_config.primary_key,
-                )
+                if table_config.chunked:
+                    results = search_chunked(
+                        conn, table, column_name, query_vector,
+                        shadow_table=table_config.shadow_table,
+                        schema=table_config.schema,
+                        pk_columns=table_config.primary_key,
+                        limit=limit,
+                    )
+                else:
+                    results = search_similar(
+                        conn, table, column_name, query_vector, limit=limit,
+                        schema=table_config.schema,
+                        storage_mode=table_config.storage_mode,
+                        shadow_table=table_config.shadow_table,
+                        source_columns=source_columns,
+                        pk_columns=table_config.primary_key,
+                    )
 
             _output_results(results, query, f"{table}.{column_name}", column_name, fmt)
 

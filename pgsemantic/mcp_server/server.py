@@ -25,6 +25,7 @@ from pgsemantic.db.vectors import (
     _qualified_table,
     count_embedded,
     count_total_with_content,
+    search_chunked as db_search_chunked,
     search_similar,
 )
 from pgsemantic.db.vectors import (
@@ -137,18 +138,28 @@ def semantic_search(
         query_vector = provider.embed_query(query)
 
         with get_connection(database_url) as conn:
-            results = search_similar(
-                conn=conn,
-                table=table,
-                column=tc.column,
-                query_vector=query_vector,
-                limit=limit,
-                schema=tc.schema,
-                storage_mode=tc.storage_mode,
-                shadow_table=tc.shadow_table,
-                source_columns=tc.source_columns,
-                pk_columns=tc.primary_key,
-            )
+            if tc.chunked:
+                results = db_search_chunked(
+                    conn=conn, table=table, column=tc.column,
+                    query_vector=query_vector,
+                    shadow_table=tc.shadow_table,
+                    schema=tc.schema,
+                    pk_columns=tc.primary_key,
+                    limit=limit,
+                )
+            else:
+                results = search_similar(
+                    conn=conn,
+                    table=table,
+                    column=tc.column,
+                    query_vector=query_vector,
+                    limit=limit,
+                    schema=tc.schema,
+                    storage_mode=tc.storage_mode,
+                    shadow_table=tc.shadow_table,
+                    source_columns=tc.source_columns,
+                    pk_columns=tc.primary_key,
+                )
 
         # Strip the raw embedding vector — it's huge and useless for the AI
         clean_results = [

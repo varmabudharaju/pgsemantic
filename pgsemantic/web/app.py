@@ -54,6 +54,7 @@ from pgsemantic.db.vectors import (
     fetch_unembedded_batch,
     hybrid_search,
     search_all,
+    search_chunked,
     search_similar,
 )
 from pgsemantic.embeddings import get_provider
@@ -972,7 +973,15 @@ async def search_table(req: SearchRequest):
         query_vector = provider.embed_query(req.query)
 
         with get_connection(db_url) as conn:
-            if req.filters:
+            if table_config.chunked:
+                results = search_chunked(
+                    conn, req.table, table_config.column, query_vector,
+                    shadow_table=table_config.shadow_table,
+                    schema=table_config.schema,
+                    pk_columns=table_config.primary_key,
+                    limit=req.limit,
+                )
+            elif req.filters:
                 pgv = get_pgvector_version(conn)
                 results = hybrid_search(
                     conn, req.table, table_config.column, query_vector,
