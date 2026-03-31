@@ -1071,6 +1071,159 @@ async def search_all_tables(req: SearchAllRequest):
         raise HTTPException(status_code=500, detail="Search failed. Check server logs.")
 
 
+@app.get("/api/visualize")
+async def visualize_embeddings(
+    table: str,
+    schema: str = "public",
+    sample: int = 1000,
+):
+    """Fetch embeddings and reduce to 2D for scatter plot visualization."""
+    import numpy as np
+
+    _validate_identifier(table)
+    if schema != "public":
+        _validate_identifier(schema)
+    sample = min(sample, 5000)
+
+    db_url = _get_db_url()
+    config = load_project_config()
+    if config is None:
+        raise HTTPException(400, "No config found.")
+
+    table_config = config.get_table_config(table)
+    if table_config is None:
+        raise HTTPException(400, f"Table '{table}' not configured.")
+
+    try:
+        with get_connection(db_url) as conn:
+            qualified = _qualified_table(table, schema)
+
+            if table_config.storage_mode == "external" and table_config.shadow_table:
+                shadow = _qualified_table(table_config.shadow_table, schema)
+                # For external mode: join shadow table to get embeddings + source text
+                source_col = (
+                    table_config.source_columns[0]
+                    if table_config.source_columns
+                    else table_config.column
+                )
+                content_expr = (
+                    "e.chunk_text"
+                    if table_config.chunked
+                    else f's."{source_col}"'
+                )
+                pk_join = (
+                    f's."{table_config.primary_key[0]}"::TEXT = e.row_id'
+                    if len(table_config.primary_key) == 1
+                    else 's."id"::TEXT = e.row_id'
+                )
+
+                if table_config.chunked:
+                    sql = (
+                        f"SELECT e.row_id, e.embedding, e.chunk_text AS label "
+                        f"FROM {shadow} e "
+                        f"WHERE e.embedding IS NOT NULL "
+                        f"ORDER BY RANDOM() LIMIT %(sample)s"
+                    )
+                else:
+                    sql = (
+                        f"SELECT e.row_id, e.embedding, {content_expr} AS label "
+                        f"FROM {qualified} s "
+                        f"JOIN {shadow} e ON {pk_join} "
+                        f"WHERE e.embedding IS NOT NULL "
+                        f"ORDER BY RANDOM() LIMIT %(sample)s"
+                    )
+            else:
+                # Inline mode
+                source_col = (
+                    table_config.source_columns[0]
+                    if table_config.source_columns
+                    else table_config.column
+                )
+                pk_col = (
+                    table_config.primary_key[0]
+                    if table_config.primary_key
+                    else "id"
+                )
+                sql = (
+                    f'SELECT "{pk_col}"::TEXT AS row_id, "embedding", '
+                    f'"{source_col}" AS label '
+                    f"FROM {qualified} "
+                    f"WHERE \"embedding\" IS NOT NULL "
+                    f"ORDER BY RANDOM() LIMIT %(sample)s"
+                )
+
+            rows = conn.execute(sql, {"sample": sample}).fetchall()
+
+        if not rows:
+            return {"points": [], "table": table}
+
+        # Extract embeddings as numpy array
+        embeddings = []
+        labels = []
+        row_ids = []
+        for row in rows:
+            emb = row["embedding"]
+            if emb is None:
+                continue
+            if isinstance(emb, (list, tuple)):
+                embeddings.append(emb)
+            else:
+                # pgvector returns a string-like object, convert
+                embeddings.append(list(emb))
+            label_text = str(row.get("label", ""))
+            if len(label_text) > 100:
+                label_text = label_text[:100] + "..."
+            labels.append(label_text)
+            row_ids.append(str(row["row_id"]))
+
+        if len(embeddings) < 2:
+            return {
+                "points": [],
+                "table": table,
+                "message": "Need at least 2 embeddings",
+            }
+
+        # PCA reduction to 2D
+        matrix = np.array(embeddings, dtype=np.float32)
+        # Center the data
+        mean = matrix.mean(axis=0)
+        centered = matrix - mean
+        # Compute covariance and top 2 eigenvectors
+        cov = np.cov(centered, rowvar=False)
+        eigenvalues, eigenvectors = np.linalg.eigh(cov)
+        # Take top 2 components (eigh returns ascending order)
+        top2 = eigenvectors[:, -2:][:, ::-1]
+        projected = centered @ top2
+
+        # Normalize to 0-1 range for canvas
+        x_min, x_max = projected[:, 0].min(), projected[:, 0].max()
+        y_min, y_max = projected[:, 1].min(), projected[:, 1].max()
+        x_range = x_max - x_min if x_max != x_min else 1.0
+        y_range = y_max - y_min if y_max != y_min else 1.0
+
+        points = []
+        for i in range(len(embeddings)):
+            points.append({
+                "x": round(
+                    float((projected[i, 0] - x_min) / x_range), 4
+                ),
+                "y": round(
+                    float((projected[i, 1] - y_min) / y_range), 4
+                ),
+                "label": labels[i],
+                "row_id": row_ids[i],
+                "table": table,
+            })
+
+        return {"points": points, "table": table, "count": len(points)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("visualize_embeddings failed")
+        raise HTTPException(500, f"Visualization failed: {e}") from e
+
+
 @app.get("/api/status")
 async def status_dashboard():
     """Embedding health dashboard for all watched tables."""
