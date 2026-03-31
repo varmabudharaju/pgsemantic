@@ -28,6 +28,24 @@ Most vector search tools ask you to set up a separate vector database, write ETL
 
 ## See it in action
 
+### Connect to any PostgreSQL database
+
+<img src="docs/screenshots/v4/01-connection.png" width="100%" alt="Connection page showing connected state with pgvector 0.8.2"/>
+
+*Paste your connection string, test it, done. Works with localhost, Supabase, Neon, RDS — anything with pgvector.*
+
+### Browse and explore your tables
+
+<img src="docs/screenshots/v4/02-tables.png" width="100%" alt="Table browser showing clinical_trials, news_articles, and products with column info and row counts"/>
+
+*See every table, column types, and row counts. Click Inspect to score columns for semantic search suitability.*
+
+### Set up with chunking for long documents
+
+<img src="docs/screenshots/v4/03-apply-chunked.png" width="100%" alt="Apply page with column picker, model selection, and chunking enabled"/>
+
+*Pick columns, choose a model, enable chunking for long text. Chunking splits documents into overlapping paragraphs so search finds the best paragraph, not just the best document.*
+
 ### Search by meaning, not keywords
 
 <img src="docs/screenshots/v4/05-search.png" width="100%" alt="Search results for 'economic recession' showing articles about inflation, unemployment, and consumer prices"/>
@@ -38,13 +56,13 @@ Most vector search tools ask you to set up a separate vector database, write ETL
 
 <img src="docs/screenshots/v4/10-cross-table-search.png" width="100%" alt="Cross-table search results showing clinical trials and news articles mixed together with table badges"/>
 
-*"health treatment side effects" searched across both clinical_trials and news_articles. Results ranked by similarity regardless of which table they came from. Purple badges show the source table.*
+*"health treatment side effects" across clinical_trials and news_articles. Results ranked by similarity regardless of source table. Purple badges show where each result came from.*
 
 ### See how your data clusters
 
 <img src="docs/screenshots/v4/06-visualize.png" width="100%" alt="2D scatter plot of 3000 embeddings with colored clusters labeled by topic"/>
 
-*Click any point to see the full row. Clusters are auto-labeled with their top keywords — no configuration needed.*
+*3,000 embeddings reduced to 2D with PCA. K-means clustering auto-labels each group with its top keywords. Click any point to see the full row.*
 
 <img src="docs/screenshots/v4/07-visualize-detail.png" width="100%" alt="Row detail drawer showing full article data from a clicked point in the scatter plot"/>
 
@@ -57,6 +75,8 @@ Most vector search tools ask you to set up a separate vector database, write ETL
 ### Monitor everything from one dashboard
 
 <img src="docs/screenshots/v4/04-dashboard.png" width="100%" alt="Dashboard showing 2 tables, 8003 embeddings, 100% coverage, 0 pending"/>
+
+*Coverage, pending queue, worker health — all in one view.*
 
 ### 10 MCP tools for AI agents
 
@@ -154,21 +174,6 @@ Switch models anytime with zero-downtime migration:
 
 ```bash
 pgsemantic migrate --table articles --model openai
-```
-
----
-
-## Smart chunking for long documents
-
-Embedding a 2000-word article as one vector loses nuance. Chunking splits it into overlapping paragraphs, each with its own vector. Search returns the best-matching *paragraph*, not just "this article was kinda relevant."
-
-<img src="docs/screenshots/v4/03-apply-chunked.png" width="100%" alt="Apply page with chunking enabled showing max tokens and overlap settings"/>
-
-```bash
-# CLI
-pgsemantic apply --table articles --column body --chunked
-
-# Web UI — check "Enable text chunking" on the Apply page
 ```
 
 ---
