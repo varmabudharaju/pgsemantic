@@ -275,3 +275,54 @@ class TestSearchCommandAllTables:
 
             assert result.exit_code == 0
             mock_sa.assert_called_once()
+
+
+class TestSearchAllEndpoint:
+    """Test the /api/search-all web endpoint."""
+
+    @patch("pgsemantic.web.app.get_connection")
+    @patch("pgsemantic.web.app.get_provider")
+    @patch("pgsemantic.web.app.load_project_config")
+    @patch("pgsemantic.web.app.load_settings")
+    def test_search_all_endpoint_returns_results(
+        self,
+        mock_settings: MagicMock,
+        mock_config: MagicMock,
+        mock_provider_fn: MagicMock,
+        mock_conn_ctx: MagicMock,
+    ) -> None:
+        from fastapi.testclient import TestClient
+
+        from pgsemantic.web.app import _csrf_token, app
+
+        mock_settings.return_value = MagicMock(
+            database_url="postgresql://test@localhost/db",
+            openai_api_key=None,
+            ollama_base_url="http://localhost:11434",
+        )
+        mock_config.return_value = ProjectConfig(
+            version="0.3.0",
+            tables=[_make_table_config(table="products")],
+        )
+
+        mock_prov = MagicMock()
+        mock_prov.embed_query.return_value = [0.1] * 384
+        mock_provider_fn.return_value = mock_prov
+
+        with patch("pgsemantic.web.app.search_all") as mock_sa:
+            mock_sa.return_value = [
+                {"id": 1, "content": "Widget", "similarity": 0.8,
+                 "_source_table": "products", "_source_schema": "public"},
+            ]
+
+            client = TestClient(app)
+            resp = client.post(
+                "/api/search-all",
+                json={"query": "test", "limit": 5},
+                headers={"X-CSRF-Token": _csrf_token},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["results"]) == 1
+        assert data["results"][0]["_source_table"] == "products"

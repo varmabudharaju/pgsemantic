@@ -52,6 +52,8 @@ from pgsemantic.db.vectors import (
     count_embedded,
     count_total_with_content,
     fetch_unembedded_batch,
+    hybrid_search,
+    search_all,
     search_similar,
 )
 from pgsemantic.embeddings import get_provider
@@ -231,11 +233,17 @@ class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
     table: str = Field(..., min_length=1, max_length=128)
     limit: int = Field(5, ge=1, le=100)
+    filters: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("table")
     @classmethod
     def validate_ident(cls, v: str) -> str:
         return _validate_identifier(v)
+
+
+class SearchAllRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=2000)
+    limit: int = Field(5, ge=1, le=100)
 
 
 class ConnectionTestRequest(BaseModel):
@@ -964,14 +972,27 @@ async def search_table(req: SearchRequest):
         query_vector = provider.embed_query(req.query)
 
         with get_connection(db_url) as conn:
-            results = search_similar(
-                conn, req.table, table_config.column, query_vector,
-                limit=req.limit, schema=table_config.schema,
-                storage_mode=table_config.storage_mode,
-                shadow_table=table_config.shadow_table,
-                source_columns=table_config.source_columns,
-                pk_columns=table_config.primary_key,
-            )
+            if req.filters:
+                pgv = get_pgvector_version(conn)
+                results = hybrid_search(
+                    conn, req.table, table_config.column, query_vector,
+                    filters=req.filters,
+                    limit=req.limit, schema=table_config.schema,
+                    pgvector_version=pgv,
+                    storage_mode=table_config.storage_mode,
+                    shadow_table=table_config.shadow_table,
+                    source_columns=table_config.source_columns,
+                    pk_columns=table_config.primary_key,
+                )
+            else:
+                results = search_similar(
+                    conn, req.table, table_config.column, query_vector,
+                    limit=req.limit, schema=table_config.schema,
+                    storage_mode=table_config.storage_mode,
+                    shadow_table=table_config.shadow_table,
+                    source_columns=table_config.source_columns,
+                    pk_columns=table_config.primary_key,
+                )
 
         hidden = {"embedding", "similarity"}
         cleaned = []
@@ -988,6 +1009,56 @@ async def search_table(req: SearchRequest):
 
     except Exception as e:
         logger.exception("search_table failed for %s", req.table)
+        raise HTTPException(status_code=500, detail="Search failed. Check server logs.")
+
+
+@app.post("/api/search-all")
+async def search_all_tables(req: SearchAllRequest):
+    """Search across all configured tables."""
+    db_url = _get_db_url()
+    settings = load_settings()
+
+    config = load_project_config()
+    if config is None or not config.tables:
+        raise HTTPException(400, "No tables configured. Run pgsemantic apply first.")
+
+    try:
+        # Build providers dict (one per unique model)
+        providers: dict[str, object] = {}
+        for tc in config.tables:
+            if tc.model not in providers:
+                api_key = settings.openai_api_key if tc.model == "openai" else None
+                ollama_url = settings.ollama_base_url if tc.model == "ollama" else None
+                providers[tc.model] = get_provider(
+                    tc.model, api_key=api_key, ollama_base_url=ollama_url
+                )
+
+        with get_connection(db_url) as conn:
+            results = search_all(
+                conn=conn,
+                query=req.query,
+                providers=providers,
+                project_config=config,
+                limit=req.limit,
+            )
+
+        hidden = {"embedding"}
+        cleaned = []
+        for row in results:
+            item: dict[str, object] = {}
+            item["similarity"] = round(float(str(row["similarity"])), 4)
+            item["content"] = str(row.get("content", ""))[:500]
+            item["_source_table"] = row.get("_source_table", "")
+            item["_source_schema"] = row.get("_source_schema", "")
+            for key, val in row.items():
+                if key not in hidden and key not in ("similarity", "content", "_source_table", "_source_schema"):
+                    item[key] = _safe_json_value(val)
+            cleaned.append(item)
+
+        return {"query": req.query, "results": cleaned}
+
+    except Exception:
+        logger.exception("search_all_tables failed")
         raise HTTPException(status_code=500, detail="Search failed. Check server logs.")
 
 
