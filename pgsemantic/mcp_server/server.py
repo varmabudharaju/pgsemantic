@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re as _re
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
@@ -542,3 +543,197 @@ def search_all_tables(
     except Exception as e:
         logger.exception("Unexpected error in search_all_tables")
         raise ToolError(f"Search failed: {e}") from e
+
+
+@mcp.tool()
+def get_schema_context(
+    tables: list[str] | None = None,
+) -> dict[str, object]:
+    """Get database schema information for SQL generation.
+
+    Returns table names, column names/types, and sample values so you can
+    write accurate SQL queries. Use this before execute_safe_sql.
+
+    Args:
+        tables: Optional list of specific table names to include.
+                If None, returns schema for all user tables.
+
+    Returns:
+        Dict with 'tables' list, each containing name, schema, columns
+        (name, type, nullable), sample_values, and row_count.
+    """
+    db_url = _get_db_url()
+
+    try:
+        with get_connection(db_url, register_vector_type=False) as conn:
+            all_tables = get_user_tables(conn)
+            result = []
+
+            for t in all_tables:
+                tname = str(t["table_name"])
+                tschema = str(t["table_schema"])
+
+                # Skip internal tables
+                if tname in ("pgvector_setup_queue", "pgvector_setup_worker_health"):
+                    continue
+                if tname.startswith("pgsemantic_embeddings_"):
+                    continue
+
+                # Filter to requested tables if specified
+                if tables and tname not in tables:
+                    continue
+
+                # Get columns
+                cols_result = conn.execute(
+                    "SELECT column_name, data_type, is_nullable "
+                    "FROM information_schema.columns "
+                    "WHERE table_name = %(tname)s AND table_schema = %(tschema)s "
+                    "ORDER BY ordinal_position",
+                    {"tname": tname, "tschema": tschema},
+                ).fetchall()
+
+                columns = [
+                    {
+                        "name": str(r["column_name"]),
+                        "type": str(r["data_type"]),
+                        "nullable": str(r["is_nullable"]) == "YES",
+                    }
+                    for r in cols_result
+                    if str(r["column_name"]) != "embedding"
+                ]
+
+                # Get sample values (first 3 rows, truncated)
+                qualified = _qualified_table(tname, tschema)
+                sample_rows = conn.execute(
+                    f"SELECT * FROM {qualified} LIMIT 3"
+                ).fetchall()
+
+                samples = []
+                for row in sample_rows:
+                    item = {}
+                    for key, val in dict(row).items():
+                        if key == "embedding":
+                            continue
+                        s = str(val) if val is not None else None
+                        if s and len(s) > 100:
+                            s = s[:100] + "..."
+                        item[key] = s
+                    samples.append(item)
+
+                row_count = get_row_count_estimate(conn, tname)
+
+                result.append({
+                    "name": tname,
+                    "schema": tschema,
+                    "columns": columns,
+                    "sample_values": samples,
+                    "row_count": row_count,
+                })
+
+        logger.info("get_schema_context: %d tables", len(result))
+        return {"tables": result}
+
+    except Exception as e:
+        logger.exception("Unexpected error in get_schema_context")
+        raise ToolError(f"Failed to get schema: {e}") from e
+
+
+# Pattern to detect non-SELECT statements
+_UNSAFE_SQL_RE = _re.compile(
+    r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT|REVOKE|COPY)\b",
+    _re.IGNORECASE,
+)
+
+
+@mcp.tool()
+def execute_safe_sql(
+    sql: str,
+) -> dict[str, object]:
+    """Execute a read-only SQL query with safety guards.
+
+    Use get_schema_context first to understand the database schema,
+    then write a SELECT query and execute it here.
+
+    Safety:
+    - Only SELECT statements allowed
+    - 10-second statement timeout
+    - Maximum 100 rows returned
+    - Read-only transaction (no mutations possible)
+
+    Args:
+        sql: A SELECT SQL query to execute.
+
+    Returns:
+        Dict with 'columns' (list of column names), 'rows' (list of row dicts),
+        'row_count' (number of rows returned), and 'truncated' (bool if > 100 rows).
+    """
+    db_url = _get_db_url()
+
+    # Validate: must start with SELECT (after stripping whitespace/comments)
+    stripped = sql.strip().lstrip("-").lstrip("/").lstrip("*").strip()
+    if not stripped.upper().startswith("SELECT"):
+        raise ToolError(
+            "Only SELECT queries are allowed. "
+            "Your query must start with SELECT."
+        )
+
+    # Check for dangerous keywords
+    if _UNSAFE_SQL_RE.search(sql):
+        raise ToolError(
+            "Query contains forbidden keywords. "
+            "Only SELECT queries are allowed (no INSERT, UPDATE, DELETE, DROP, etc.)."
+        )
+
+    # Append LIMIT if not present
+    if "limit" not in sql.lower():
+        sql = sql.rstrip().rstrip(";") + " LIMIT 100"
+
+    try:
+        with get_connection(db_url, register_vector_type=False) as conn:
+            # Set read-only and timeout
+            conn.execute("SET TRANSACTION READ ONLY")
+            conn.execute("SET statement_timeout = '10s'")
+
+            result = conn.execute(sql)
+            rows = result.fetchmany(101)  # Fetch 101 to detect truncation
+
+            truncated = len(rows) > 100
+            if truncated:
+                rows = rows[:100]
+
+            # Get column names
+            col_names = (
+                [desc[0] for desc in result.description]
+                if result.description
+                else []
+            )
+
+            # Convert rows to dicts with safe values
+            clean_rows = []
+            for row in rows:
+                item = {}
+                for key, val in dict(row).items():
+                    if isinstance(val, (list, bytes, memoryview)):
+                        item[key] = str(type(val).__name__)
+                    else:
+                        s = str(val) if val is not None else None
+                        if s and len(s) > 500:
+                            s = s[:500] + "..."
+                        item[key] = s
+                clean_rows.append(item)
+
+        logger.info(
+            "execute_safe_sql: %d rows, truncated=%s", len(clean_rows), truncated
+        )
+        return {
+            "columns": col_names,
+            "rows": clean_rows,
+            "row_count": len(clean_rows),
+            "truncated": truncated,
+        }
+
+    except ToolError:
+        raise
+    except Exception as e:
+        logger.exception("execute_safe_sql failed")
+        raise ToolError(f"Query failed: {e}") from e

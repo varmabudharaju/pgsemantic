@@ -1410,6 +1410,8 @@ async def mcp_config_snippet(request: Request):
             {"name": "inspect_columns", "description": "Score text columns for semantic search suitability"},
             {"name": "list_configured_tables", "description": "List tables with semantic search already configured"},
             {"name": "search_all_tables", "description": "Search across all configured tables at once"},
+            {"name": "get_schema_context", "description": "Get database schema for SQL generation"},
+            {"name": "execute_safe_sql", "description": "Execute read-only SQL queries safely"},
         ],
     }
 
