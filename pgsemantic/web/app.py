@@ -199,6 +199,9 @@ class ApplyRequest(BaseModel):
     columns: str = Field("", max_length=512)
     model: str = Field("local", pattern=r"^(local|local-mpnet|openai|openai-large|ollama)$")
     external: bool = False
+    chunked: bool = False
+    chunk_max_tokens: int = Field(256, ge=32, le=1024)
+    chunk_overlap: int = Field(64, ge=0, le=256)
     schema_name: str = Field("public", max_length=128)
 
     @field_validator("table", "schema_name")
@@ -291,6 +294,20 @@ class RetryRequest(BaseModel):
     @classmethod
     def validate_ident(cls, v: str) -> str:
         return _validate_identifier(v) if v else v
+
+
+class MigrateRequest(BaseModel):
+    table: str = Field(..., min_length=1, max_length=128)
+    model: str = Field(..., pattern=r"^(local|local-mpnet|openai|openai-large|ollama)$")
+
+    @field_validator("table")
+    @classmethod
+    def validate_ident(cls, v: str) -> str:
+        return _validate_identifier(v)
+
+
+class SqlQueryRequest(BaseModel):
+    sql: str = Field(..., min_length=1, max_length=5000)
 
 
 # --- Routes ---
@@ -578,6 +595,9 @@ async def apply_setup(req: ApplyRequest):
 
     db_url = _get_db_url()
 
+    if req.chunked:
+        req.external = True
+
     if req.column and req.columns:
         raise HTTPException(400, "Cannot use both column and columns")
     if not req.column and not req.columns:
@@ -634,7 +654,11 @@ async def apply_setup(req: ApplyRequest):
             steps.append({"step": "Verify columns & primary key", "status": "ok", "pk": pk_columns})
 
             if req.external:
-                create_shadow_table(conn, shadow_table=shadow_table_name, dimensions=dimensions, schema=req.schema_name)
+                if req.chunked:
+                    from pgsemantic.db.vectors import create_chunked_shadow_table
+                    create_chunked_shadow_table(conn, shadow_table_name, dimensions, req.schema_name)
+                else:
+                    create_shadow_table(conn, shadow_table=shadow_table_name, dimensions=dimensions, schema=req.schema_name)
                 steps.append({"step": "Create shadow table", "status": "created"})
             else:
                 if column_exists(conn, req.table, "embedding", req.schema_name):
@@ -699,6 +723,9 @@ async def apply_setup(req: ApplyRequest):
             applied_at=datetime.now(tz=timezone.utc).isoformat(),
             primary_key=pk_columns, columns=source_columns if is_multi else None,
             storage_mode=storage_mode, shadow_table=shadow_table_name,
+            chunked=req.chunked,
+            chunk_max_tokens=req.chunk_max_tokens,
+            chunk_overlap=req.chunk_overlap,
         )
         config.tables.append(table_config)
         save_project_config(config)
@@ -1261,6 +1288,103 @@ async def status_dashboard():
         raise HTTPException(status_code=500, detail="Status check failed. Check server logs.")
 
     return {"tables": tables}
+
+
+@app.post("/api/migrate")
+async def migrate_table(req: MigrateRequest):
+    """Trigger model migration for a table."""
+    import subprocess
+    import sys
+
+    db_url = _get_db_url()
+
+    config = load_project_config()
+    if config is None:
+        raise HTTPException(400, "No config found.")
+
+    table_config = config.get_table_config(req.table)
+    if table_config is None:
+        raise HTTPException(400, f"Table '{req.table}' not configured.")
+
+    if table_config.model == req.model:
+        raise HTTPException(400, f"Table already uses model '{req.model}'.")
+
+    try:
+        # Run migration as subprocess so it doesn't block the server
+        cmd = [sys.executable, "-m", "pgsemantic", "migrate",
+               "--table", req.table, "--model", req.model]
+        process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env={**dict(os.environ), "DATABASE_URL": db_url},
+        )
+        return {
+            "success": True,
+            "message": f"Migration started: {req.table} → {req.model}",
+            "pid": process.pid,
+        }
+    except Exception as e:
+        logger.exception("migrate_table failed")
+        raise HTTPException(500, f"Failed to start migration: {e}") from e
+
+
+@app.post("/api/sql-query")
+async def sql_query(req: SqlQueryRequest):
+    """Execute a read-only SQL query."""
+    db_url = _get_db_url()
+
+    stripped = req.sql.strip()
+    if not stripped.upper().startswith("SELECT"):
+        raise HTTPException(400, "Only SELECT queries are allowed.")
+
+    unsafe_re = re.compile(
+        r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT|REVOKE|COPY)\b",
+        re.IGNORECASE,
+    )
+    if unsafe_re.search(req.sql):
+        raise HTTPException(400, "Query contains forbidden keywords.")
+
+    sql = req.sql.rstrip().rstrip(";")
+    if "limit" not in sql.lower():
+        sql += " LIMIT 100"
+
+    try:
+        with get_connection(db_url, register_vector_type=False) as conn:
+            conn.execute("SET TRANSACTION READ ONLY")
+            conn.execute("SET statement_timeout = '10s'")
+
+            result = conn.execute(sql)
+            rows = result.fetchmany(101)
+
+            truncated = len(rows) > 100
+            if truncated:
+                rows = rows[:100]
+
+            col_names = [desc[0] for desc in result.description] if result.description else []
+
+            clean_rows = []
+            for row in rows:
+                item = {}
+                for key, val in dict(row).items():
+                    if isinstance(val, (list, bytes, memoryview)):
+                        item[key] = str(type(val).__name__)
+                    else:
+                        s = str(val) if val is not None else None
+                        if s and len(s) > 500:
+                            s = s[:500] + "..."
+                        item[key] = s
+                clean_rows.append(item)
+
+        return {
+            "columns": col_names,
+            "rows": clean_rows,
+            "row_count": len(clean_rows),
+            "truncated": truncated,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("sql_query failed")
+        raise HTTPException(500, f"Query failed: {e}") from e
 
 
 @app.post("/api/retry")
