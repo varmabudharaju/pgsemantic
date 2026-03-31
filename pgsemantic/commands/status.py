@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from pgsemantic.config import load_project_config, load_settings
+from pgsemantic.config import SHADOW_TABLE_PREFIX, load_project_config, load_settings
 from pgsemantic.db.client import get_connection
 from pgsemantic.db.queue import count_failed, count_pending, get_worker_health
 from pgsemantic.db.vectors import count_embedded, count_total_with_content
@@ -58,6 +58,7 @@ def status_command(
     table.add_column("Coverage", justify="right")
     table.add_column("Pending", justify="right")
     table.add_column("Failed", justify="right")
+    table.add_column("Migration", style="white")
     table.add_column("Applied", style="dim")
 
     try:
@@ -83,8 +84,9 @@ def status_command(
                         tc.model_name,
                         tc.storage_mode,
                         "[red]TABLE MISSING[/red]",
-                        "—",
-                        "—",
+                        "\u2014",
+                        "\u2014",
+                        "\u2014",
                         tc.applied_at,
                     )
                     continue
@@ -109,6 +111,23 @@ def status_command(
                     else f"[green]{failed}[/green]"
                 )
 
+                # Check for in-progress migration
+                migration_table = f"{SHADOW_TABLE_PREFIX}{tc.table}_migration"
+                try:
+                    result = conn.execute(
+                        "SELECT COUNT(*) AS cnt FROM information_schema.tables "
+                        "WHERE table_schema = %(schema)s AND table_name = %(tname)s",
+                        {"schema": tc.schema, "tname": migration_table},
+                    ).fetchone()
+                    has_migration = bool(result and int(str(result["cnt"])) > 0)
+                except Exception:
+                    has_migration = False
+
+                migration_str = (
+                    "[yellow]In progress[/yellow]" if has_migration
+                    else "[dim]\u2014[/dim]"
+                )
+
                 table.add_row(
                     tc.table,
                     ", ".join(tc.source_columns),
@@ -117,6 +136,7 @@ def status_command(
                     coverage_str,
                     pending_str,
                     failed_str,
+                    migration_str,
                     tc.applied_at,
                 )
 
