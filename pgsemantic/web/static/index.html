@@ -357,7 +357,7 @@
         <!-- SEARCH -->
         <div id="p-search" class="page hidden">
             <div class="pg-header"><div><div class="pg-title">Search</div><div class="pg-desc">Natural language semantic search</div></div></div>
-            <div class="help-box">Search using <strong>natural language</strong> — describe what you're looking for and pgsemantic finds semantically similar rows. Add <strong>filters</strong> to narrow results by column values (e.g. category, author). <strong>Similarity</strong> ranges 0–1 (above 0.5 is a strong match).</div>
+            <div class="help-box">Search using <strong>natural language</strong> — describe what you're looking for and pgsemantic finds rows with similar meaning. Add <strong>filters</strong> to narrow by column values (e.g. category, author). <strong>Similarity</strong> scores are relative — higher is better, but exact thresholds depend on your data and model. Try a few queries to calibrate.</div>
             <div class="card"><div class="card-body">
                 <form onsubmit="doSearch(event)">
                     <div class="field-row"><div class="field"><label class="label">Table</label><select class="select" id="s-table" onchange="loadSearchFilters()"><option value="">Select table...</option></select></div><div class="field"><label class="label">Limit</label><input class="input" id="s-limit" type="number" value="5" min="1" max="100"></div><div class="field" style="display:flex;align-items:flex-end;padding-bottom:6px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;white-space:nowrap;font-size:13px;color:var(--fg-2)"><input type="checkbox" id="s-all-tables" onchange="toggleSearchAll(this.checked)"> Search all tables</label></div></div>
